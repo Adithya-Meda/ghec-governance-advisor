@@ -1,0 +1,87 @@
+name: "GH Governance Advisor"
+description: "Audits GitHub Enterprise organizations and repositories against security, governance, and CI/CD best practices."
+author: "GHEC Platform Engineering Team"
+
+inputs:
+  app_id:
+    description: "GitHub App numeric ID"
+    required: true
+  private_key:
+    description: "GitHub App RSA private key (.pem string)"
+    required: true
+  installation_id:
+    description: "GitHub App Installation ID (optional: auto-discovered if omitted)"
+    required: false
+    default: ""
+  api_base_url:
+    description: "GitHub API Base URL: https://api.github.com for GitHub.com, https://api.<enterprise>.ghe.com for ghe.com, or https://ghe.company.com/api/v3 for GHES."
+    required: false
+    default: "https://api.github.com"
+  advisory_config:
+    description: "Path to custom advisory policy JSON (optional: uses built-in defaults if omitted)"
+    required: false
+    default: ""
+  inventory:
+    description: "Path to repository inventory CSV (optional: audits all accessible repos if omitted)"
+    required: false
+    default: ""
+  output_dir:
+    description: "Directory to save generated Excel, CSV, and HTML reports"
+    required: false
+    default: "./output"
+  gemini_api_key:
+    description: "Optional Google Gemini API key for AI-tailored remediations"
+    required: false
+    default: ""
+  openai_api_key:
+    description: "Optional OpenAI API key"
+    required: false
+    default: ""
+  anthropic_api_key:
+    description: "Optional Anthropic API key"
+    required: false
+    default: ""
+  llm_provider:
+    description: "LLM provider name: 'gemini', 'openai', or 'anthropic'"
+    required: false
+    default: "gemini"
+  llm_model:
+    description: "LLM model identifier"
+    required: false
+    default: "gemini-3.5-flash"
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Set up Python Environment"
+      uses: actions/setup-python@0b93645e9dc2c792dd34f771f5cf6b809d94569e # v5.3.0
+      with:
+        python-version: "3.12"
+
+    - name: "Install Governance Advisor"
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install "${{ github.action_path }}"
+
+    - name: "Execute Governance Audit"
+      shell: bash
+      env:
+        GHEC_APP_ID: ${{ inputs.app_id }}
+        GHEC_APP_PRIVATE_KEY: ${{ inputs.private_key }}
+        GHEC_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
+        GHEC_API_BASE_URL: ${{ inputs.api_base_url }}
+        GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        LLM_PROVIDER: ${{ inputs.llm_provider }}
+        LLM_MODEL: ${{ inputs.llm_model }}
+      run: |
+        CMD="ghec-advisor --output-dir ${{ inputs.output_dir }}"
+        if [ -n "${{ inputs.advisory_config }}" ]; then
+          CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
+        fi
+        if [ -n "${{ inputs.inventory }}" ]; then
+          CMD="$CMD --inventory ${{ inputs.inventory }}"
+        fi
+        eval $CMD

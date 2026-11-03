@@ -343,6 +343,16 @@ class HTMLReporter(BaseReporter):
       line-height: 1.6;
       white-space: pre-wrap;
     }}
+    .ai-safety-warning {{
+      background: rgba(210, 153, 34, 0.12);
+      border: 1px solid rgba(210, 153, 34, 0.4);
+      color: #e3b341;
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }}
   </style>
 </head>
 <body>
@@ -385,6 +395,10 @@ class HTMLReporter(BaseReporter):
     </div>
 
     {ai_briefing_block}
+
+    <div class="ai-safety-warning">
+      <strong>⚠️ AI Safety & Advisory Notice:</strong> AI-synthesized remediation snippets, configuration files, and executive summaries are advisory only. Code configurations and policies must be reviewed, tested, and validated in non-production environments by repository maintainers prior to applying to production systems.
+    </div>
 
     <div class="controls">
       <div class="btn-group">

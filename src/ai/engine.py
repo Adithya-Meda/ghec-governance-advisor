@@ -567,7 +567,11 @@ Output ONLY the code/configuration snippet inside code fences. Do not add introd
                 if len(lines) >= 2 and lines[-1].startswith("```"):
                     cleaned_text = "\n".join(lines[1:-1])
 
-            result.remediation_snippet_after = f"# [AI Tailored for {languages}]\n{cleaned_text}"
+            result.remediation_snippet_after = (
+                f"# [AI Tailored for {languages}]\n"
+                f"# ADVISORY ONLY: Review, test, and validate in non-production environments before applying.\n"
+                f"{cleaned_text}"
+            )
             result.extra_details["ai_enriched"] = True
             result.extra_details["detected_stack"] = languages
             result.extra_details["ai_model"] = self.model_name

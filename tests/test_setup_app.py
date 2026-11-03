@@ -1,0 +1,51 @@
+"""Unit tests for GitHub App setup wizard."""
+
+from unittest.mock import MagicMock, patch
+import pytest
+
+from src.setup_app import get_manifest, ManifestCallbackHandler, resolve_api_base_url
+
+
+def test_resolve_api_base_url_domains() -> None:
+    """Test REST API base URL resolution across GitHub.com, ghe.com, and GHES."""
+    assert resolve_api_base_url("https://github.com") == "https://api.github.com"
+    assert resolve_api_base_url("github.com") == "https://api.github.com"
+    # ghe.com data residency
+    assert resolve_api_base_url("https://octocorp.ghe.com") == "https://api.octocorp.ghe.com"
+    assert resolve_api_base_url("octocorp.ghe.com") == "https://api.octocorp.ghe.com"
+    # GHES on-premises
+    assert resolve_api_base_url("https://ghe.internal.net") == "https://ghe.internal.net/api/v3"
+    assert resolve_api_base_url("ghe.internal.net") == "https://ghe.internal.net/api/v3"
+
+
+def test_get_manifest_payload() -> None:
+    """Verify GitHub App manifest contains required enterprise read permissions."""
+    manifest = get_manifest("https://github.com")
+    assert manifest["name"] == "GH-Governance-Advisor"
+    assert manifest["hook_attributes"]["active"] is False
+    assert manifest["default_permissions"]["organization_administration"] == "read"
+    assert manifest["default_permissions"]["administration"] == "read"
+    assert manifest["default_permissions"]["actions"] == "read"
+    assert manifest["default_permissions"]["contents"] == "read"
+    assert manifest["default_permissions"]["secret_scanning_alerts"] == "read"
+
+
+def test_manifest_callback_handler_redirect_form() -> None:
+    """Test callback handler GET / generates proper HTML redirect."""
+    handler = ManifestCallbackHandler.__new__(ManifestCallbackHandler)
+    handler.path = "/"
+    handler.target_org = "test-org"
+    handler.github_domain = "https://github.com"
+    handler.api_domain = "https://api.github.com"
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.wfile = MagicMock()
+
+    handler.do_GET()
+
+    handler.send_response.assert_called_with(200)
+    handler.send_header.assert_called_with("Content-Type", "text/html; charset=utf-8")
+    assert handler.wfile.write.called
+    written_html = handler.wfile.write.call_args[0][0].decode("utf-8")
+    assert "https://github.com/organizations/test-org/settings/apps/new" in written_html

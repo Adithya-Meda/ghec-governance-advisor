@@ -1,0 +1,106 @@
+"""Unit tests for user credentials and configuration manager."""
+
+import json
+import os
+import tempfile
+import pytest
+
+from src.credentials import (
+    find_private_key,
+    get_credentials_path,
+    get_secrets_dir,
+    get_user_config_dir,
+    load_user_credentials,
+    resolve_runtime_credentials,
+    save_private_key,
+    save_user_credentials,
+)
+
+
+def test_custom_config_dir() -> None:
+    """Verify that GHEC_CONFIG_DIR overrides the default home directory."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.environ["GHEC_CONFIG_DIR"] = temp_dir
+        try:
+            assert get_user_config_dir() == os.path.abspath(temp_dir)
+            assert get_credentials_path() == os.path.join(temp_dir, "config.json")
+            assert get_secrets_dir() == os.path.join(temp_dir, "secrets")
+        finally:
+            os.environ.pop("GHEC_CONFIG_DIR", None)
+
+
+def test_save_and_load_credentials() -> None:
+    """Test persisting and loading user credentials."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.environ["GHEC_CONFIG_DIR"] = temp_dir
+        try:
+            saved_path = save_user_credentials(
+                app_id=123456,
+                private_key_path="/fake/path/key.pem",
+                installation_id=78910,
+                api_base_url="https://api.github.com",
+                llm_provider="openai",
+                llm_model="gpt-4o",
+                llm_api_key="sk-test-12345",
+                llm_enabled=True,
+            )
+            assert os.path.isfile(saved_path)
+
+            loaded = load_user_credentials()
+            assert loaded["github"]["app_id"] == 123456
+            assert loaded["github"]["installation_id"] == 78910
+            assert loaded["github"]["api_base_url"] == "https://api.github.com"
+            assert loaded["llm"]["provider"] == "openai"
+            assert loaded["llm"]["model"] == "gpt-4o"
+            assert loaded["llm"]["api_key"] == "sk-test-12345"
+            assert loaded["llm"]["enabled"] is True
+        finally:
+            os.environ.pop("GHEC_CONFIG_DIR", None)
+
+
+def test_save_private_key() -> None:
+    """Test saving private key with standardized naming convention."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.environ["GHEC_CONFIG_DIR"] = temp_dir
+        try:
+            sample_pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----"
+            key_path = save_private_key(sample_pem, app_slug="test-app")
+            assert os.path.isfile(key_path)
+            assert "test-app" in key_path
+            assert key_path.endswith(".private-key.pem")
+
+            with open(key_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            assert content == sample_pem
+        finally:
+            os.environ.pop("GHEC_CONFIG_DIR", None)
+
+
+def test_resolve_runtime_credentials_env_priority() -> None:
+    """Verify environment variables take precedence over saved user configuration."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.environ["GHEC_CONFIG_DIR"] = temp_dir
+        try:
+            # 1. Save baseline config
+            save_user_credentials(
+                app_id=111111,
+                private_key_path="dummy.pem",
+                installation_id=222222,
+                llm_provider="gemini",
+                llm_api_key="key-from-config",
+            )
+
+            # 2. Override via environment variables
+            os.environ["GHEC_APP_ID"] = "999999"
+            os.environ["GHEC_APP_INSTALLATION_ID"] = "888888"
+            os.environ["GEMINI_API_KEY"] = "key-from-env"
+
+            creds = resolve_runtime_credentials()
+            assert creds["app_id"] == "999999"
+            assert creds["installation_id"] == "888888"
+            assert creds["llm_api_key"] == "key-from-env"
+        finally:
+            os.environ.pop("GHEC_CONFIG_DIR", None)
+            os.environ.pop("GHEC_APP_ID", None)
+            os.environ.pop("GHEC_APP_INSTALLATION_ID", None)
+            os.environ.pop("GEMINI_API_KEY", None)

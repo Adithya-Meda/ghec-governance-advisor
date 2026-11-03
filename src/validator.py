@@ -11,6 +11,73 @@ from typing import Any, Dict, List, Optional, Set
 
 VALID_PERSONAS = {"org_admin", "repo_admin", "contributor", "all"}
 
+DEFAULT_APP_CONFIG: Dict[str, Any] = {
+    "github": {
+        "api_base_url": "${GHEC_API_BASE_URL:-https://api.github.com}",
+        "timeout_seconds": 30,
+        "max_retries": 3,
+        "retry_backoff_factor": 1.5,
+    },
+    "reporting": {
+        "output_directory": "./output",
+        "report_prefix": "ghec_governance_audit",
+        "generate_xlsx": True,
+        "generate_csv": True,
+        "generate_html": True,
+    },
+    "execution": {
+        "concurrency_limit": 5,
+        "auto_discover_if_empty": True,
+    },
+    "llm": {
+        "enabled": True,
+        "provider": "${LLM_PROVIDER:-gemini}",
+        "model": "${LLM_MODEL:-gemini-3.5-flash}",
+    },
+}
+
+DEFAULT_ADVISORY_CONFIG: Dict[str, Any] = {
+    "advisory_metadata": {
+        "version": "1.0.0",
+        "organization": "Enterprise-Platform-Engineering",
+        "last_updated": "2026-11-03",
+        "description": "Centralized Governance, Security & Best Practices Advisory Policies for GHEC",
+    },
+    "enabled_checks": {
+        "org_admin": {
+            "rulesets_adoption": True,
+            "secret_scanning_push_protection": True,
+            "saml_sso_enforcement": True,
+            "runner_groups_governance": True,
+            "default_workflow_permissions": True,
+        },
+        "repo_admin": {
+            "codeowners_validation": True,
+            "branch_rulesets": True,
+            "environment_protection_gates": True,
+            "workflow_sha_pinning": True,
+            "workflow_concurrency_groups": True,
+            "dependabot_configuration": True,
+        },
+        "contributor": {
+            "devcontainers": True,
+            "issue_templates": True,
+            "pull_request_templates": True,
+            "copilot_instructions": True,
+            "pre_commit_hooks": True,
+            "setup_documentation": True,
+        },
+    },
+    "policy_thresholds": {
+        "minimum_approvals": 2,
+        "require_linear_history": True,
+        "require_signed_commits": False,
+        "disallow_force_pushes": True,
+        "disallow_deletions": True,
+    },
+}
+
+
 
 @dataclass
 class RepoTarget:
@@ -72,6 +139,20 @@ class ConfigValidator:
             return True
         except Exception:
             return False
+
+    @classmethod
+    def get_default_app_config(cls) -> Dict[str, Any]:
+        """Return a fresh copy of the default app configuration with env var interpolation."""
+        raw_json = json.dumps(DEFAULT_APP_CONFIG)
+        interpolated = cls.substitute_env_vars(raw_json)
+        return json.loads(interpolated)
+
+    @classmethod
+    def get_default_advisory_config(cls) -> Dict[str, Any]:
+        """Return a fresh copy of the default advisory configuration with all 14 checks enabled."""
+        raw_json = json.dumps(DEFAULT_ADVISORY_CONFIG)
+        interpolated = cls.substitute_env_vars(raw_json)
+        return json.loads(interpolated)
 
     @classmethod
     def load_and_validate_json(cls, file_path: str, is_advisory: bool = False) -> Dict[str, Any]:

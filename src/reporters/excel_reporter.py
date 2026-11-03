@@ -181,6 +181,17 @@ class ExcelReporter(BaseReporter):
                 for c in range(2, 6):
                     ws.cell(row=r, column=c).border = self.border_cell
 
+        notice_row = 26 if executive_summary else 15
+        c_notice = ws.cell(
+            row=notice_row,
+            column=2,
+            value="⚠️ AI Safety Notice: All AI-synthesized remediation snippets and summaries are advisory only. Review and validate in non-production environments before deployment.",
+        )
+        c_notice.font = self.font_italic
+        c_notice.alignment = Alignment(wrap_text=True, vertical="center")
+        ws.merge_cells(f"B{notice_row}:E{notice_row}")
+        ws.row_dimensions[notice_row].height = 22
+
         self._auto_adjust_columns(ws)
 
     def _build_ai_recommendations_sheet(self, ws, results: List[CheckResult]) -> None:
@@ -270,6 +281,17 @@ class ExcelReporter(BaseReporter):
                         cell.alignment = Alignment(horizontal="center", vertical="top")
                     elif col_idx == 10:  # Code block
                         cell.font = self.font_code
+
+        safety_row = ws.max_row + 2
+        c_safe = ws.cell(
+            row=safety_row,
+            column=1,
+            value="⚠️ AI Safety Notice: AI-synthesized remediation snippets and configuration files are advisory only. Validate in a lower environment prior to production merge.",
+        )
+        c_safe.font = self.font_italic
+        c_safe.alignment = Alignment(vertical="center")
+        ws.merge_cells(f"A{safety_row}:M{safety_row}")
+        ws.row_dimensions[safety_row].height = 22
 
         self._auto_adjust_columns(ws)
 

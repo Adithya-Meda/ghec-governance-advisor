@@ -1,12 +1,14 @@
 """Automated 1-Click GitHub App Registration Wizard for GHEC.
 
 Uses GitHub's official App Manifest flow:
-1. Spins up a temporary local HTTP server on http://localhost:8989
-2. Opens your browser to GitHub with pre-configured read-only permissions
-3. Catches the authorization code callback upon approval
-4. Exchanges code via POST /app-manifests/{code}/conversions
-5. Automatically saves the RSA private key (.pem) to secrets/
-6. Prints the App ID and installation instructions
+1. Prompts interactively for target Organization and parameters.
+2. Spins up a temporary local HTTP server on http://localhost:8989
+3. Opens browser to GitHub with pre-configured read-only governance permissions
+4. Exchanges authorization code via POST /app-manifests/{code}/conversions
+5. Automatically saves the RSA private key (.pem) to user config (~/.ghec-advisor/secrets/)
+6. Opens GitHub App installation page and automatically fetches Installation ID
+7. Prompts user to select AI Remediation Provider and enter API key
+8. Persists all credentials to ~/.ghec-advisor/config.json (Zero .env or repos.csv required!)
 """
 
 from __future__ import annotations
@@ -18,9 +20,18 @@ import json
 import logging
 import os
 import socketserver
+import time
 import urllib.parse
 import webbrowser
+from typing import Optional
 import requests
+
+from .auth.github_app_auth import GitHubAppAuth
+from .credentials import (
+    get_credentials_path,
+    save_private_key,
+    save_user_credentials,
+)
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("setup-wizard")
@@ -32,7 +43,7 @@ CALLBACK_URL = f"http://localhost:{PORT}/callback"
 def get_manifest(github_domain: str) -> dict:
     """Generate the GitHub App manifest payload."""
     return {
-        "name": "GitHub-Governance-Advisor",
+        "name": "GH-Governance-Advisor",
         "url": github_domain,
         "description": "Platform Governance & Best Practices Advisory Agent for GHEC",
         "hook_attributes": {
@@ -147,14 +158,39 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run_wizard(org_name: str, github_domain: str = "https://github.com") -> None:
+def resolve_api_base_url(domain: str) -> str:
+    """Resolve GitHub REST API base URL across GitHub.com, ghe.com, and GHES.
+
+    - github.com -> https://api.github.com
+    - *.ghe.com (e.g. octocorp.ghe.com) -> https://api.octocorp.ghe.com
+    - GHES on-premises (e.g. ghe.mycompany.com) -> https://ghe.mycompany.com/api/v3
+    """
+    domain = domain.strip().rstrip("/")
+    if not domain.startswith("http://") and not domain.startswith("https://"):
+        domain = f"https://{domain}"
+
+    parsed = urllib.parse.urlparse(domain)
+    host = parsed.netloc.lower()
+
+    if host == "github.com" or host.endswith(".github.com"):
+        return "https://api.github.com"
+    elif host.endswith(".ghe.com"):
+        return f"{parsed.scheme}://api.{host}"
+    else:
+        return f"{domain}/api/v3"
+
+
+def run_wizard(org_name: str, github_domain: str = "https://github.com", open_browser: bool = True) -> None:
     """Run the interactive setup wizard."""
-    github_domain = github_domain.rstrip("/")
-    api_domain = "https://api.github.com" if "github.com" in github_domain else f"{github_domain}/api/v3"
+    github_domain = github_domain.strip().rstrip("/")
+    if not github_domain.startswith("http://") and not github_domain.startswith("https://"):
+        github_domain = f"https://{github_domain}"
+    api_domain = resolve_api_base_url(github_domain)
 
     ManifestCallbackHandler.target_org = org_name
     ManifestCallbackHandler.github_domain = github_domain
     ManifestCallbackHandler.api_domain = api_domain
+    ManifestCallbackHandler.conversion_result = None
 
     print("\n" + "=" * 65)
     print("  GHEC GOVERNANCE ADVISOR - 1-CLICK GITHUB APP SETUP")
@@ -166,7 +202,8 @@ def run_wizard(org_name: str, github_domain: str = "https://github.com") -> None
     print("Starting local listener and opening your browser...")
 
     server = socketserver.TCPServer(("localhost", PORT), ManifestCallbackHandler)
-    webbrowser.open(f"http://localhost:{PORT}/")
+    if open_browser:
+        webbrowser.open(f"http://localhost:{PORT}/")
 
     # Wait for the single callback request
     while ManifestCallbackHandler.conversion_result is None:
@@ -174,35 +211,179 @@ def run_wizard(org_name: str, github_domain: str = "https://github.com") -> None
 
     server.server_close()
     result = ManifestCallbackHandler.conversion_result
+    if not result:
+        print("Setup aborted: Could not obtain GitHub App credentials.")
+        return
 
     app_id = result.get("id")
-    app_slug = result.get("slug")
-    pem_key = result.get("pem")
+    app_slug = result.get("slug") or "gh-governance-advisor"
+    pem_key = result.get("pem", "")
     install_url = f"{github_domain}/organizations/{org_name}/settings/apps/{app_slug}/installations"
 
-    # Save private key securely
-    os.makedirs("secrets", exist_ok=True)
-    key_path = os.path.join("secrets", "github-app.private-key.pem")
-    with open(key_path, "w", encoding="utf-8") as f:
-        f.write(pem_key)
-
-    # In POSIX systems, ensure strict permissions (chmod 600)
+    # 1. Automatically save private key to ~/.ghec-advisor/secrets/
+    key_path = save_private_key(pem_key, app_slug=app_slug)
+    # Also save a copy to ./secrets/ if local workspace exists
     try:
-        os.chmod(key_path, 0o600)
+        local_secrets = os.path.join(os.getcwd(), "secrets")
+        if os.path.isdir(local_secrets) or os.path.isfile(".env"):
+            save_private_key(pem_key, app_slug=app_slug, dest_dir=local_secrets)
     except Exception:
         pass
 
     print("\n" + "=" * 65)
-    print("  GITHUB APP REGISTERED SUCCESSFULLY!")
+    print("  STEP 1: GITHUB APP CREATED")
     print("=" * 65)
     print(f"  App Name:         {result.get('name')}")
     print(f"  App ID:           {app_id}")
-    print(f"  Private Key:      Saved to {os.path.abspath(key_path)}")
+    print(f"  Private Key:      Saved to {key_path}")
     print("-" * 65)
-    print("  FINAL STEP - INSTALL APP ON YOUR REPOSITORIES:")
-    print(f"  1. Visit: {install_url}")
-    print("  2. Click 'Install' and select 'All repositories' (or target repos).")
-    print("  3. Copy the numeric Installation ID from the URL after install.")
+
+    # 2. App Installation & Auto-fetch Installation ID
+    print("\n" + "=" * 65)
+    print("  STEP 2: INSTALL APP ON YOUR ORGANIZATION")
+    print("=" * 65)
+    print(f"  Installation URL: {install_url}")
+    print("  Please click 'Install' and choose 'All repositories' (recommended).")
+    print("-" * 65)
+
+    if open_browser:
+        try:
+            webbrowser.open(install_url)
+        except Exception:
+            pass
+
+    installation_id: Optional[int] = None
+    try:
+        auth = GitHubAppAuth(app_id=app_id, private_key=pem_key, api_base_url=api_domain)
+        prompt_msg = (
+            "Press Enter once you clicked 'Install' in the browser to auto-fetch your Installation ID\n"
+            "(or enter 'm' to input manually, 's' to skip and auto-discover during audit): "
+        )
+        choice = input(prompt_msg).strip().lower()
+
+        if choice == "m":
+            manual_in = input("Enter Installation ID: ").strip()
+            if manual_in.isdigit():
+                installation_id = int(manual_in)
+        elif choice != "s":
+            print("Querying GitHub API for active installations...")
+            for _ in range(3):
+                installations = auth.discover_installations()
+                if installations:
+                    matched = [
+                        i for i in installations
+                        if i.get("account", {}).get("login", "").lower() == org_name.lower()
+                    ]
+                    selected = matched[0] if matched else installations[0]
+                    installation_id = int(selected["id"])
+                    org_login = selected.get("account", {}).get("login", org_name)
+                    print(f"-> [SUCCESS] Auto-detected Installation ID: {installation_id} for '{org_login}'!")
+                    break
+                time.sleep(2)
+
+            if not installation_id:
+                print("Could not auto-detect active installation yet.")
+                manual_in = input("Enter Installation ID manually (or press Enter to auto-discover during audit): ").strip()
+                if manual_in.isdigit():
+                    installation_id = int(manual_in)
+    except Exception as err:
+        logger.debug("Installation discovery error: %s", err)
+        manual_in = input("Enter Installation ID manually (or press Enter to auto-discover during audit): ").strip()
+        if manual_in.isdigit():
+            installation_id = int(manual_in)
+
+    # 3. Interactive AI Remediation Provider Selection
+    print("\n" + "=" * 65)
+    print("  STEP 3: AI REMEDIATION & GOVERNANCE ADVISORY ENGINE")
+    print("=" * 65)
+    print("Select your AI Remediation Provider:")
+    print("  [1] Google Gemini (Recommended - default model: gemini-3.5-flash)")
+    print("  [2] OpenAI (default model: gpt-4o)")
+    print("  [3] Anthropic Claude (default model: claude-3-5-sonnet-20241022)")
+    print("  [4] None / Disable AI (Deterministic policy checks only)")
+    print("-" * 65)
+
+    llm_choice = input("Select provider [1-4] (default: 1): ").strip() or "1"
+    llm_provider = "gemini"
+    llm_model = "gemini-3.5-flash"
+    llm_api_key = ""
+    llm_enabled = True
+
+    if llm_choice == "2":
+        llm_provider = "openai"
+        llm_model = "gpt-4o"
+        llm_api_key = input("Enter OPENAI_API_KEY (press Enter to skip): ").strip()
+        custom_model = input(f"Enter model name [{llm_model}]: ").strip()
+        if custom_model:
+            llm_model = custom_model
+    elif llm_choice == "3":
+        llm_provider = "anthropic"
+        llm_model = "claude-3-5-sonnet-20241022"
+        llm_api_key = input("Enter ANTHROPIC_API_KEY (press Enter to skip): ").strip()
+        custom_model = input(f"Enter model name [{llm_model}]: ").strip()
+        if custom_model:
+            llm_model = custom_model
+    elif llm_choice == "4":
+        llm_provider = "none"
+        llm_model = ""
+        llm_api_key = ""
+        llm_enabled = False
+    else:
+        llm_provider = "gemini"
+        llm_model = "gemini-3.5-flash"
+        llm_api_key = input("Enter GEMINI_API_KEY (press Enter to skip): ").strip()
+        custom_model = input(f"Enter model name [{llm_model}]: ").strip()
+        if custom_model:
+            llm_model = custom_model
+
+    # 4. Persist credentials securely
+    cfg_path = save_user_credentials(
+        app_id=app_id,
+        private_key_path=key_path,
+        installation_id=installation_id,
+        api_base_url=api_domain,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_api_key=llm_api_key,
+        llm_enabled=llm_enabled,
+    )
+
+    # Optional: Also update local .env if present for project consistency
+    try:
+        from .validator import ConfigValidator
+        env_path = os.path.abspath(".env")
+        if os.path.isfile(env_path):
+            ConfigValidator.update_env_file("GHEC_APP_ID", str(app_id), env_path)
+            if installation_id:
+                ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", str(installation_id), env_path)
+            ConfigValidator.update_env_file("GHEC_APP_PRIVATE_KEY_PATH", key_path, env_path)
+            if llm_enabled and llm_api_key:
+                if llm_provider == "gemini":
+                    ConfigValidator.update_env_file("GEMINI_API_KEY", llm_api_key, env_path)
+                elif llm_provider == "openai":
+                    ConfigValidator.update_env_file("OPENAI_API_KEY", llm_api_key, env_path)
+                elif llm_provider == "anthropic":
+                    ConfigValidator.update_env_file("ANTHROPIC_API_KEY", llm_api_key, env_path)
+                ConfigValidator.update_env_file("LLM_PROVIDER", llm_provider, env_path)
+                ConfigValidator.update_env_file("LLM_MODEL", llm_model, env_path)
+    except Exception as err:
+        logger.debug("Could not auto-update local .env: %s", err)
+
+    print("\n" + "=" * 65)
+    print("  SETUP COMPLETE! ZERO CONFIGURATION REQUIRED.")
+    print("=" * 65)
+    print(f"  App Name:         {result.get('name')}")
+    print(f"  App ID:           {app_id}")
+    print(f"  Installation ID:  {installation_id or 'Auto-discovered during audit'}")
+    print(f"  Private Key:      {key_path}")
+    print(f"  Configuration:    {cfg_path}")
+    ai_status = f"{llm_provider.upper()} ({llm_model})" if llm_enabled else "DISABLED"
+    print(f"  AI Remediation:   {ai_status}")
+    print("-" * 65)
+    print("  No .env, repos.csv, or JSON config files are required!")
+    print("  Run your governance audit anytime from any directory:")
+    print()
+    print("    ghec-advisor")
     print("=" * 65 + "\n")
 
 
@@ -230,9 +411,16 @@ def main() -> None:
         print("Error: Organization name is required.")
         return
 
-    run_wizard(org_name=org, github_domain=args.domain)
+    domain = args.domain
+    if not args.org and domain == "https://github.com":
+        custom_domain = input(
+            "Enter GitHub Domain [https://github.com] (press Enter for default, or e.g. https://<enterprise>.ghe.com or https://ghe.company.com): "
+        ).strip()
+        if custom_domain:
+            domain = custom_domain
+
+    run_wizard(org_name=org, github_domain=domain)
 
 
 if __name__ == "__main__":
     main()
-

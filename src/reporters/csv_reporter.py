@@ -42,6 +42,7 @@ class CSVReporter(BaseReporter):
             "explanation",
             "remediation_command",
             "documentation_url",
+            "ai_safety_notice",
         ]
 
         with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
@@ -51,6 +52,11 @@ class CSVReporter(BaseReporter):
                 is_ai = self.is_ai_result(r)
                 rec_source = "AI_TAILORED" if is_ai else "STANDARD_RULE"
                 ai_enriched_str = "true" if is_ai else "false"
+                safety_notice = (
+                    "ADVISORY ONLY: Test and validate in non-production environments prior to deployment."
+                    if is_ai
+                    else ""
+                )
                 detected_stack = r.extra_details.get("detected_stack", "")
                 target_file = self.infer_target_file(r.check_id)
                 remediation_code = r.remediation_snippet_after or r.recommended_state
@@ -75,6 +81,7 @@ class CSVReporter(BaseReporter):
                         r.explanation,
                         r.remediation_command,
                         r.documentation_url,
+                        safety_notice,
                     ]
                 )
 

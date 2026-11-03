@@ -257,10 +257,12 @@ def run_audit(
     return results
 
 
-def _resolve_config_path(custom_path: str, default_relative: str) -> str:
+def _resolve_config_path(custom_path: str, default_relative: str) -> Optional[str]:
     """Resolve configuration file path, checking explicit input, CWD, then package bundle."""
-    if custom_path and os.path.isfile(custom_path):
-        return custom_path
+    if custom_path:
+        if os.path.isfile(custom_path):
+            return custom_path
+        raise FileNotFoundError(f"Specified configuration file not found: {custom_path}")
 
     # Check current working directory
     cwd_path = os.path.join(os.getcwd(), default_relative)
@@ -273,7 +275,7 @@ def _resolve_config_path(custom_path: str, default_relative: str) -> str:
     if os.path.isfile(bundled_path):
         return bundled_path
 
-    return custom_path or default_relative
+    return None
 
 
 def main() -> int:
@@ -291,17 +293,17 @@ def main() -> int:
     parser.add_argument(
         "--app-config",
         default="",
-        help="Path to app runtime configuration JSON (defaults to bundled or local config/config.json).",
+        help="Optional path to custom app runtime configuration JSON (defaults to built-in enterprise settings).",
     )
     parser.add_argument(
         "--advisory-config",
         default="",
-        help="Path to centralized advisory policy JSON (defaults to bundled or local config/advisory.json).",
+        help="Optional path to custom policy JSON (defaults to all 14 enterprise best practices enabled).",
     )
     parser.add_argument(
         "--inventory",
         default="",
-        help="Path to repository inventory CSV (optional: if omitted or empty, all installed repos are audited).",
+        help="Optional path to repository inventory CSV (defaults to auto-discovering all organization repositories).",
     )
     parser.add_argument(
         "--auto-discover",
@@ -311,7 +313,7 @@ def main() -> int:
     parser.add_argument(
         "--output-dir",
         default="",
-        help="Directory where output reports will be saved (overrides config.json).",
+        help="Directory where output reports will be saved (defaults to ./output).",
     )
     parser.add_argument(
         "--mock-mode",
@@ -326,18 +328,27 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Resolve config paths (explicit CLI > CWD > bundled package defaults)
-    app_cfg_path = _resolve_config_path(args.app_config, "config/config.json")
-    advisory_cfg_path = _resolve_config_path(args.advisory_config, "config/advisory.json")
-    inventory_path = _resolve_config_path(args.inventory, "config/repos.csv")
-
-    # Load and validate inputs
+    # Resolve config paths (explicit CLI > CWD > bundled package defaults > built-in defaults)
     try:
-        app_config = ConfigValidator.load_and_validate_json(app_cfg_path)
-        advisory_config = ConfigValidator.load_and_validate_json(
-            advisory_cfg_path, is_advisory=True
+        app_cfg_path = _resolve_config_path(args.app_config, "config/config.json")
+        advisory_cfg_path = _resolve_config_path(args.advisory_config, "config/advisory.json")
+        inventory_path = _resolve_config_path(args.inventory, "config/repos.csv")
+
+        app_config = (
+            ConfigValidator.load_and_validate_json(app_cfg_path)
+            if app_cfg_path
+            else ConfigValidator.get_default_app_config()
         )
-        targets = [] if args.auto_discover else ConfigValidator.load_and_validate_repos_csv(inventory_path, optional=True)
+        advisory_config = (
+            ConfigValidator.load_and_validate_json(advisory_cfg_path, is_advisory=True)
+            if advisory_cfg_path
+            else ConfigValidator.get_default_advisory_config()
+        )
+        targets = (
+            []
+            if args.auto_discover or not inventory_path
+            else ConfigValidator.load_and_validate_repos_csv(inventory_path, optional=True)
+        )
     except Exception as err:
         logger.error("Configuration validation failed: %s", err)
         return 1
@@ -346,45 +357,22 @@ def main() -> int:
     output_dir = args.output_dir or app_config.get("reporting", {}).get("output_directory", "./output")
     os.makedirs(output_dir, exist_ok=True)
 
+    # Load credentials with priority: Environment Variables > Local .env > User Config (~/.ghec-advisor/config.json)
+    from .credentials import resolve_runtime_credentials, save_user_credentials
+    creds = resolve_runtime_credentials()
+
     # Initialize AI Engine (Multi-provider: Gemini, OpenAI, Anthropic)
-    llm_cfg = app_config.get("llm", {})
-    provider = (os.getenv("LLM_PROVIDER") or llm_cfg.get("provider", "gemini")).lower()
-    env_model = os.getenv("LLM_MODEL")
+    provider = creds["llm_provider"]
+    ai_model = creds["llm_model"]
+    llm_api_key = creds["llm_api_key"]
+    llm_enabled = creds["llm_enabled"]
+    key_hint = f"{provider.upper()}_API_KEY"
 
-    if env_model:
-        m_lower = env_model.lower()
-        if m_lower.startswith(("gpt-", "o1", "o3", "chatgpt-")):
-            provider = "openai"
-        elif m_lower.startswith("claude-"):
-            provider = "anthropic"
-
-    if provider in ("openai", "azure"):
-        llm_api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY") or llm_cfg.get("api_key", "")).strip()
-        default_model = "gpt-4o"
-        key_hint = "OPENAI_API_KEY"
-    elif provider == "anthropic":
-        llm_api_key = (os.getenv("ANTHROPIC_API_KEY") or os.getenv("LLM_API_KEY") or llm_cfg.get("api_key", "")).strip()
-        default_model = "claude-3-5-sonnet-20241022"
-        key_hint = "ANTHROPIC_API_KEY"
-    else:
-        provider = "gemini"
-        llm_api_key = (
-            os.getenv("GEMINI_API_KEY")
-            or os.getenv("LLM_API_KEY")
-            or llm_cfg.get("api_key", "")
-        ).strip()
-        default_model = "gemini-3.5-flash"
-        key_hint = "GEMINI_API_KEY"
-
-    if llm_api_key.startswith("${") and llm_api_key.endswith("}"):
-        llm_api_key = ""
-
-    ai_model = env_model or llm_cfg.get("model") or default_model
     ai_engine = AIEngine(
         api_key=llm_api_key,
         model_name=ai_model,
         provider=provider,
-        enabled=llm_cfg.get("enabled", True),
+        enabled=llm_enabled,
     )
 
     if not args.mock_mode and ai_engine.enabled:
@@ -404,7 +392,7 @@ def main() -> int:
             logger.warning(
                 "AI Remediation Engine: OFFLINE (%s). "
                 "Audit will proceed using deterministic policy rules. "
-                "To enable AI-tailored remediations, check your %s in .env.",
+                "To enable AI-tailored remediations, run 'ghec-setup' or configure %s.",
                 reason,
                 key_hint,
             )
@@ -415,7 +403,7 @@ def main() -> int:
         logger.warning(
             "AI Remediation Engine: OFFLINE (%s not configured). "
             "Remediations will use deterministic policy defaults. "
-            "To enable AI-tailored remediations, provide %s in .env or environment.",
+            "To enable AI-tailored remediations, run 'ghec-setup' or configure %s.",
             key_hint,
             key_hint,
         )
@@ -437,16 +425,16 @@ def main() -> int:
         for res in results:
             _log_finding(res)
     else:
-        # Load credentials from environment
-        app_id = os.getenv("GHEC_APP_ID")
-        installation_id = os.getenv("GHEC_APP_INSTALLATION_ID")
-        private_key = os.getenv("GHEC_APP_PRIVATE_KEY") or os.getenv("GHEC_APP_PRIVATE_KEY_PATH")
-        api_base_url = os.getenv("GHEC_API_BASE_URL", app_config.get("github", {}).get("api_base_url", "https://api.github.com"))
+        # Load credentials resolved across Environment / Local .env / User Config
+        app_id = creds["app_id"]
+        installation_id = creds["installation_id"]
+        private_key = creds["private_key"]
+        api_base_url = creds["api_base_url"] or app_config.get("github", {}).get("api_base_url", "https://api.github.com")
 
         if not app_id or not private_key:
             logger.error(
-                "Missing required GitHub App credentials. Ensure GHEC_APP_ID and "
-                "GHEC_APP_PRIVATE_KEY (or GHEC_APP_PRIVATE_KEY_PATH) are set."
+                "Missing required GitHub App credentials. Run 'ghec-setup' to automatically register "
+                "your GitHub App and download credentials, or set GHEC_APP_ID and GHEC_APP_PRIVATE_KEY."
             )
             return 1
 
@@ -458,7 +446,7 @@ def main() -> int:
                 api_base_url=api_base_url,
             )
 
-            # Auto-discover installation ID if omitted from .env
+            # Auto-discover installation ID if omitted
             if not auth.installation_id:
                 logger.info("GHEC_APP_INSTALLATION_ID not configured. Auto-discovering installations via GitHub App JWT...")
                 installations = auth.discover_installations()
@@ -494,10 +482,20 @@ def main() -> int:
                         org_login,
                     )
 
-                # Auto-update .env so subsequent runs are instant
+                # Persist discovered installation ID to ~/.ghec-advisor/config.json so subsequent runs are instant
+                save_user_credentials(
+                    app_id=app_id,
+                    private_key_path=private_key,
+                    installation_id=auth.installation_id,
+                    api_base_url=api_base_url,
+                    llm_provider=provider,
+                    llm_model=ai_model,
+                    llm_api_key=llm_api_key,
+                    llm_enabled=llm_enabled,
+                )
                 env_path = os.path.abspath(".env")
-                if ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", str(auth.installation_id), env_path):
-                    logger.info("Auto-updated %s with GHEC_APP_INSTALLATION_ID=%s.", env_path, auth.installation_id)
+                if os.path.isfile(env_path):
+                    ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", str(auth.installation_id), env_path)
 
             client = GHECClient(
                 auth=auth,
