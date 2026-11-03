@@ -1,5 +1,0 @@
-org_name,repo_name,target_personas,default_branch,owner_team
-fintech-core,payment-gateway,all,main,@fintech-core/payments
-fintech-core,auth-service,all,main,@fintech-core/security
-fintech-core,internal-portal,repo_admin|contributor,main,@fintech-core/frontend
-fintech-core,sandbox-demo,contributor,main,@fintech-core/interns
