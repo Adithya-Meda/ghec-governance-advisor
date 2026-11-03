@@ -46,6 +46,11 @@ ghec-advisor
 ```
 *Audits all accessible repositories and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
 
+To view available command-line flags and options:
+```bash
+ghec-advisor -h
+```
+
 ---
 
 ### Method 2: GitHub Actions (CI/CD)
