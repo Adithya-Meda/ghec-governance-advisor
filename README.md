@@ -29,9 +29,11 @@ Audits GitHub organizations and repositories against security, governance, and C
 
 ### Method 1: Local CLI (Recommended)
 
-#### 1. Install
+No cloning, `.env`, or configuration files required.
+
+#### 1. Install (or Upgrade)
 ```bash
-pipx install git+https://github.com/Adithya-Meda/ghec-governance-advisor.git
+pipx install --force git+https://github.com/Adithya-Meda/ghec-governance-advisor.git
 ```
 
 #### 2. Setup (One-Time)
