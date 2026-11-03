@@ -9,16 +9,16 @@ from src.main import main
 
 
 def test_main_mock_mode_execution() -> None:
-    """Run full CLI execution in mock mode with explicit configs."""
+    """Run full CLI execution in mock mode with custom override configs."""
     with tempfile.TemporaryDirectory() as temp_dir:
+        custom_advisory = os.path.join(temp_dir, "custom_advisory.json")
+        with open(custom_advisory, "w", encoding="utf-8") as f:
+            f.write('{"enabled_checks": {"org_admin": {"rulesets_adoption": true}}}')
+
         test_args = [
             "src.main",
-            "--app-config",
-            "config/config.json",
             "--advisory-config",
-            "config/advisory.json",
-            "--inventory",
-            "config/repos.csv",
+            custom_advisory,
             "--output-dir",
             temp_dir,
             "--mock-mode",

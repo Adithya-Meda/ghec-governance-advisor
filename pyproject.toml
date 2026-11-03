@@ -52,7 +52,7 @@ ghec-setup = "src.setup_app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "config*"]
+include = ["src*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.json", "*.csv", "*.md"]
+"*" = ["*.json", "*.md"]
