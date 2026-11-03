@@ -40,10 +40,10 @@ PORT = 8989
 CALLBACK_URL = f"http://localhost:{PORT}/callback"
 
 
-def get_manifest(github_domain: str) -> dict:
+def get_manifest(github_domain: str, app_name: str = "GH-Governance-Advisor") -> dict:
     """Generate the GitHub App manifest payload."""
     return {
-        "name": "GH-Governance-Advisor",
+        "name": app_name or "GH-Governance-Advisor",
         "url": github_domain,
         "description": "Platform Governance & Best Practices Advisory Agent for GHEC",
         "hook_attributes": {
@@ -67,6 +67,7 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler to serve the initial auto-redirect and receive the GitHub callback."""
 
     target_org: str = ""
+    app_name: str = ""
     github_domain: str = "https://github.com"
     api_domain: str = "https://api.github.com"
     conversion_result: dict | None = None
@@ -80,8 +81,10 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
         parsed_url = urllib.parse.urlparse(self.path)
 
         if parsed_url.path == "/":
-            # Serve auto-submitting POST form to GitHub
-            manifest_json = json.dumps(get_manifest(self.github_domain))
+            # Auto-assign unique name using target_org to avoid global GitHub App name collisions
+            default_name = f"GH-Governance-Advisor-{self.target_org}" if self.target_org else "GH-Governance-Advisor"
+            active_name = self.app_name or default_name
+            manifest_json = json.dumps(get_manifest(self.github_domain, app_name=active_name))
             form_action = (
                 f"{self.github_domain}/organizations/{self.target_org}/settings/apps/new"
                 if self.target_org
@@ -180,14 +183,23 @@ def resolve_api_base_url(domain: str) -> str:
         return f"{domain}/api/v3"
 
 
-def run_wizard(org_name: str, github_domain: str = "https://github.com", open_browser: bool = True) -> None:
+def run_wizard(
+    org_name: str,
+    github_domain: str = "https://github.com",
+    app_name: str = "",
+    open_browser: bool = True,
+) -> None:
     """Run the interactive setup wizard."""
     github_domain = github_domain.strip().rstrip("/")
     if not github_domain.startswith("http://") and not github_domain.startswith("https://"):
         github_domain = f"https://{github_domain}"
     api_domain = resolve_api_base_url(github_domain)
 
+    default_name = f"GH-Governance-Advisor-{org_name}" if org_name else "GH-Governance-Advisor"
+    chosen_name = app_name or default_name
+
     ManifestCallbackHandler.target_org = org_name
+    ManifestCallbackHandler.app_name = chosen_name
     ManifestCallbackHandler.github_domain = github_domain
     ManifestCallbackHandler.api_domain = api_domain
     ManifestCallbackHandler.conversion_result = None
@@ -196,6 +208,7 @@ def run_wizard(org_name: str, github_domain: str = "https://github.com", open_br
     print("  GHEC GOVERNANCE ADVISOR - 1-CLICK GITHUB APP SETUP")
     print("=" * 65)
     print(f"Target Organization: {org_name}")
+    print(f"App Name:            {chosen_name}")
     print(f"GitHub Domain:       {github_domain}")
     print(f"Callback Listener:   {CALLBACK_URL}")
     print("-" * 65)
@@ -396,6 +409,12 @@ def main() -> None:
         help="Target GitHub organization name (e.g. fintech-core).",
     )
     parser.add_argument(
+        "--app-name",
+        required=False,
+        default="",
+        help="Custom GitHub App name (defaults to GH-Governance-Advisor-<org>).",
+    )
+    parser.add_argument(
         "--domain",
         required=False,
         default="https://github.com",
@@ -419,7 +438,7 @@ def main() -> None:
         if custom_domain:
             domain = custom_domain
 
-    run_wizard(org_name=org, github_domain=domain)
+    run_wizard(org_name=org, github_domain=domain, app_name=args.app_name)
 
 
 if __name__ == "__main__":
