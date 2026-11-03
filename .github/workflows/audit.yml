@@ -1,0 +1,57 @@
+name: "GHEC Governance & Best Practices Advisory Audit"
+
+on:
+  workflow_dispatch: # Single-click manual run without input prompts
+  schedule:
+    - cron: "0 6 * * 1" # Scheduled weekly execution: Mondays at 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  governance-audit:
+    name: "Execute Advisory Audit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout Governance Repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Set up Python Environment"
+        uses: actions/setup-python@0b93645e9dc2c792dd34f771f5cf6b809d94569e # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: "Run Advisory Agent"
+        env:
+          GHEC_APP_ID: ${{ vars.GHEC_APP_ID }}
+          GHEC_APP_INSTALLATION_ID: ${{ vars.GHEC_APP_INSTALLATION_ID }}
+          GHEC_APP_PRIVATE_KEY: ${{ secrets.GHEC_APP_PRIVATE_KEY }}
+          GHEC_API_BASE_URL: ${{ vars.GHEC_API_BASE_URL || 'https://api.github.com' }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'gemini-3.5-flash' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ghec-advisor \
+            --app-config config/config.json \
+            --advisory-config config/advisory.json \
+            --inventory config/repos.csv
+
+      - name: "Publish Audit Reports Artifact"
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with:
+          name: ghec-governance-audit-reports
+          path: |
+            output/*.xlsx
+            output/*.csv
+            output/*.html
+          retention-days: 60

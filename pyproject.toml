@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghec-governance-advisor"
+version = "1.0.0"
+description = "Enterprise GitHub Enterprise Cloud (GHEC) Platform Governance & Enablement Advisory Agent."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "GHEC Platform Engineering Team" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "cryptography>=43.0.0",
+    "PyJWT>=2.9.0",
+    "requests>=2.32.0",
+    "openpyxl>=3.1.2",
+    "urllib3>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "colorama>=0.4.6",
+]
+
+[project.optional-dependencies]
+ai = [
+    "google-genai>=0.1.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+]
+
+[project.scripts]
+ghec-advisor = "src.main:main"
+ghec-governance = "src.main:main"
+ghec-setup = "src.setup_app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "config*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.csv", "*.md"]

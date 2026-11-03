@@ -1,0 +1,205 @@
+"""Validation engine for repos.csv, config.json, and advisory.json."""
+
+from __future__ import annotations
+
+import csv
+import json
+import os
+import re
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set
+
+VALID_PERSONAS = {"org_admin", "repo_admin", "contributor", "all"}
+
+
+@dataclass
+class RepoTarget:
+    """Validated target repository representation."""
+
+    org_name: str
+    repo_name: str
+    target_personas: Set[str]
+    default_branch: str = "main"
+    owner_team: str = ""
+
+
+class ConfigValidator:
+    """Validates configuration and inventory inputs against strict schemas."""
+
+    ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z0-9_]+)(?::-([^}]*))?\}")
+
+    @classmethod
+    def substitute_env_vars(cls, text: str) -> str:
+        """Replace ${ENV_VAR:-default} and ${ENV_VAR} patterns with environment values recursively."""
+        for _ in range(5):
+            new_text = cls.ENV_VAR_PATTERN.sub(
+                lambda m: os.getenv(m.group(1), m.group(2) if m.group(2) is not None else ""),
+                text,
+            )
+            if new_text == text:
+                break
+            text = new_text
+
+        return text
+
+    @staticmethod
+    def update_env_file(key: str, value: str, env_path: str = ".env") -> bool:
+        """Safely update or append a key=value pair in .env file without destroying other lines."""
+        try:
+            lines: List[str] = []
+            found = False
+            if os.path.isfile(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+            new_lines: List[str] = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+                    prefix = "export " if stripped.startswith("export ") else ""
+                    new_lines.append(f"{prefix}{key}={value}\n")
+                    found = True
+                else:
+                    new_lines.append(line)
+
+            if not found:
+                if new_lines and not new_lines[-1].endswith("\n"):
+                    new_lines[-1] += "\n"
+                new_lines.append(f"{key}={value}\n")
+
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def load_and_validate_json(cls, file_path: str, is_advisory: bool = False) -> Dict[str, Any]:
+        """Load, substitute env vars, and validate JSON configuration file.
+
+        Args:
+            file_path: Path to JSON configuration.
+            is_advisory: Whether this is the policy advisory.json file.
+
+        Returns:
+            Validated configuration dictionary.
+        """
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"Configuration file not found: {file_path}")
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                raw_text = f.read()
+        except Exception as err:
+            raise ValueError(f"Could not read config file {file_path}: {err}") from err
+
+        interpolated_text = cls.substitute_env_vars(raw_text)
+
+        try:
+            data = json.loads(interpolated_text)
+        except json.JSONDecodeError as err:
+            raise ValueError(f"Malformed JSON in {file_path}: {err}") from err
+
+        if not isinstance(data, dict):
+            raise ValueError(f"Root of {file_path} must be a JSON object.")
+
+        if is_advisory:
+            cls._validate_advisory_structure(data, file_path)
+
+        return data
+
+    @staticmethod
+    def _validate_advisory_structure(data: Dict[str, Any], file_path: str) -> None:
+        """Ensure advisory.json conforms to expected schema."""
+        if "enabled_checks" not in data:
+            raise ValueError(f"Missing 'enabled_checks' object in {file_path}")
+
+        enabled_checks = data["enabled_checks"]
+        for persona in ["org_admin", "repo_admin", "contributor"]:
+            if persona in enabled_checks and not isinstance(enabled_checks[persona], dict):
+                raise ValueError(
+                    f"'enabled_checks.{persona}' in {file_path} must be a dictionary of check toggles."
+                )
+
+    @staticmethod
+    def load_and_validate_repos_csv(file_path: str, optional: bool = True) -> List[RepoTarget]:
+        """Strictly parse and validate repository inventory from repos.csv.
+
+        Args:
+            file_path: Path to repos.csv.
+            optional: If True, returns empty list when file is missing or empty.
+
+        Returns:
+            List of validated RepoTarget instances.
+        """
+        if not os.path.isfile(file_path):
+            if optional:
+                return []
+            raise FileNotFoundError(f"Inventory file not found: {file_path}")
+
+        targets: List[RepoTarget] = []
+        seen_repos: Set[str] = set()
+
+        try:
+            with open(file_path, "r", encoding="utf-8-sig") as csv_file:
+                reader = csv.DictReader(csv_file)
+                if not reader.fieldnames:
+                    return []
+
+                required_cols = {"org_name", "repo_name"}
+                present_cols = set(f.strip() for f in reader.fieldnames if f)
+                missing_cols = required_cols - present_cols
+                if missing_cols:
+                    if optional and not present_cols:
+                        return []
+                    raise ValueError(
+                        f"repos.csv is missing required columns: {', '.join(sorted(missing_cols))}"
+                    )
+
+                for line_no, row in enumerate(reader, start=2):
+                    clean_row = {
+                        (k.strip() if k else ""): (v.strip() if v else "")
+                        for k, v in row.items()
+                    }
+
+                    org = clean_row.get("org_name", "")
+                    repo = clean_row.get("repo_name", "")
+
+                    if not org and not repo:
+                        continue
+                    if not org or not repo:
+                        raise ValueError(
+                            f"Line {line_no} in {file_path}: 'org_name' and 'repo_name' cannot be empty."
+                        )
+
+                    unique_key = f"{org.lower()}/{repo.lower()}"
+                    if unique_key in seen_repos:
+                        continue
+                    seen_repos.add(unique_key)
+
+                    raw_personas = clean_row.get("target_personas", "all")
+                    personas_set: Set[str] = set()
+                    for p in re.split(r"[,|;]", raw_personas):
+                        p_clean = p.strip().lower()
+                        if p_clean in VALID_PERSONAS:
+                            personas_set.add(p_clean)
+                    if not personas_set:
+                        personas_set = {"all"}
+
+                    default_branch = clean_row.get("default_branch", "main") or "main"
+                    owner_team = clean_row.get("owner_team", "")
+
+                    targets.append(
+                        RepoTarget(
+                            org_name=org,
+                            repo_name=repo,
+                            target_personas=personas_set,
+                            default_branch=default_branch,
+                            owner_team=owner_team,
+                        )
+                    )
+        except UnicodeDecodeError as err:
+            raise ValueError(f"Could not decode {file_path}: {err}") from err
+
+        return targets
+

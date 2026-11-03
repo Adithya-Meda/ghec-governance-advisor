@@ -1,0 +1,41 @@
+{
+  "advisory_metadata": {
+    "version": "1.0.0",
+    "organization": "Enterprise-Platform-Engineering",
+    "last_updated": "2026-10-29",
+    "description": "Centralized Governance, Security & Best Practices Advisory Policies for GHEC"
+  },
+  "enabled_checks": {
+    "org_admin": {
+      "rulesets_adoption": true,
+      "secret_scanning_push_protection": true,
+      "saml_sso_enforcement": true,
+      "runner_groups_governance": true,
+      "default_workflow_permissions": true
+    },
+    "repo_admin": {
+      "codeowners_validation": true,
+      "branch_rulesets": true,
+      "environment_protection_gates": true,
+      "workflow_sha_pinning": true,
+      "workflow_concurrency_groups": true,
+      "dependabot_configuration": true
+    },
+    "contributor": {
+      "devcontainers": true,
+      "issue_templates": true,
+      "pull_request_templates": true,
+      "copilot_instructions": true,
+      "pre_commit_hooks": true,
+      "setup_documentation": true
+    }
+  },
+  "policy_thresholds": {
+    "minimum_approvals": 2,
+    "require_linear_history": true,
+    "require_signed_commits": false,
+    "disallow_force_pushes": true,
+    "disallow_deletions": true
+  }
+}
+

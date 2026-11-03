@@ -1,0 +1,9 @@
+# Core runtime dependencies pinned for stability and security
+cryptography>=43.0.0
+PyJWT>=2.9.0
+requests>=2.32.0
+openpyxl>=3.1.2
+urllib3>=2.2.0
+python-dotenv>=1.0.0
+colorama>=0.4.6
+
