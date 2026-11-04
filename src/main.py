@@ -69,7 +69,7 @@ class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         label = self.LEVEL_LABELS.get(record.levelno, record.levelname[:4])
         color = self.LEVEL_COLORS.get(record.levelno, self.RESET)
-        time_str = self.formatTime(record, "%Y-%m-%d %H:%M:%S")
+        time_str = self.formatTime(record, "%d-%m-%Y %H:%M:%S")
         levelname = f"{color}[{label:^4}]{self.RESET}"
         timestamp = f"{self.DIM}[{time_str}]{self.RESET}"
         return f"{timestamp} {levelname} {record.getMessage()}"
@@ -372,15 +372,13 @@ Usage:
 Commands:
   audit       Run security, platform governance, and CI/CD audit across repositories
   setup       Launch 1-click GitHub App setup wizard & credential configuration
-
-Roadmap Commands:
-  activity    Analyze contributor cadence, seat allocation, and audit logs
-  runners     Inspect Actions runner fleet usage, execution minutes, and bottlenecks
+  activity    Analyze contributor cadence, active days, seat allocation, and commit/PR metrics
+  runners     Inspect Actions self-hosted runner fleet usage, compute hours, and queue wait times
 
 Options:
   -h, --help  Show this help message or help for a specific command
 
-Run 'repo360 <command> --help' for details on a specific command (e.g. 'repo360 audit -h').
+Run 'repo360 <command> --help' for details on a specific command (e.g. 'repo360 activity -h').
 """)
     return 0
 
@@ -417,15 +415,23 @@ def main() -> int:
         from .setup_app import main as setup_main
         return setup_main()
 
-    if subcmd in ("activity", "users"):
-        print("\n[Repo360] 'activity' command is scheduled on the Repo360 roadmap.")
-        print("  Coming soon: contributor cadence, seat tracking, and audit log analysis.\n")
-        return 0
+    if subcmd in ("activity", "users", "user-activity"):
+        sys.argv.pop(1)
+        from .activity.cli import run_activity_cli
+        try:
+            return run_activity_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            return 130
 
-    if subcmd in ("runners", "metrics"):
-        print("\n[Repo360] 'runners' command is scheduled on the Repo360 roadmap.")
-        print("  Coming soon: runner fleet utilization, queue wait times, and concurrency metrics.\n")
-        return 0
+    if subcmd in ("runners", "metrics", "runner-metrics"):
+        sys.argv.pop(1)
+        from .runners.cli import run_runners_cli
+        try:
+            return run_runners_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            return 130
 
     # 4. Unknown subcommand or misplaced option
     print(f"Error: Unknown command '{sys.argv[1]}'. Run 'repo360 --help' for available commands.\n")
@@ -439,6 +445,26 @@ def run_audit_cli() -> int:
     except KeyboardInterrupt:
         logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
         _print_failure_banner("Audit cancelled by user (Ctrl+C). No final reports generated.")
+        return 130
+
+
+def run_activity_cli() -> int:
+    """Dedicated entrypoint for repo360 activity standalone execution."""
+    from .activity.cli import run_activity_cli as _run_act
+    try:
+        return _run_act()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def run_runners_cli() -> int:
+    """Dedicated entrypoint for repo360 runners standalone execution."""
+    from .runners.cli import run_runners_cli as _run_run
+    try:
+        return _run_run()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
         return 130
 
 

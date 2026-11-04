@@ -1,6 +1,6 @@
 # Repo360
 
-360-degree platform governance, compliance, and engineering intelligence for GitHub organizations. Audits repositories, evaluates security controls, and generates interactive HTML dashboards, executive Excel workbooks, and flat CSV feeds.
+Platform governance, compliance, engineering intelligence, and infrastructure metrics for GitHub organizations. Evaluates repositories against security baselines, analyzes contributor activity, monitors Actions self-hosted runner fleets, and generates interactive HTML dashboards, executive Excel workbooks, and SIEM CSV feeds.
 
 > [!WARNING]
 > **Advisory Only:** Remediation snippets and policies are advisory. Validate suggested changes in non-production environments before applying.
@@ -25,6 +25,21 @@
 
 ---
 
+## Repository Inventory (`repos.csv`)
+
+Define target repositories in a CSV inventory file (`repos.csv`):
+
+```csv
+org,repo,enabled
+my-org,*,true
+my-org,payment-gateway,true
+my-org,auth-service,true
+```
+
+Wildcards (`*`) scan all repositories across an organization. Comments (`#`) are supported.
+
+---
+
 ## How to Use
 
 ### Method 1: Local CLI
@@ -40,32 +55,34 @@ repo360 setup --org <your-org>
 ```
 Registers the read-only GitHub App, downloads the private key to `~/.repo360/secrets/`, and saves local configuration.
 
-#### 3. Run Audit
+#### 3. Run Commands
+
 ```bash
-# Audit all installed organizations
+# Governance Audit (HTML dashboard, executive Excel, SIEM CSV)
 repo360 audit
+repo360 audit --org <your-org>
+repo360 audit --inventory repos.csv
 
-# Audit specific organizations
-repo360 audit --org OrgAlpha,OrgBeta
+# User Activity & Contributor Metrics (Excel & CSV)
+repo360 activity --repos repos.csv --lookback-days 90
+
+# Actions Self-Hosted Runners Analytics (Excel & CSV)
+repo360 runners --repos repos.csv --lookback-days 90
 ```
-Writes reports to `./repo360-output/` (`.html`, `.xlsx`, `.csv`).
 
----
-
-### Multi-Organization Support
-
-Install the registered GitHub App across multiple organizations in your enterprise. Running `repo360 audit` automatically discovers all installations, provisions scoped tokens per organization, and aggregates findings into a single executive dashboard and SIEM export.
+All reports are written to `./repo360-output/`.
 
 ---
 
 ### Method 2: GitHub Actions (CI/CD)
 
+Repo360 is packaged as a composite action that sets up the environment, executes requested scans, and uploads reports as workflow artifacts.
+
 #### 1. Configure Secrets & Variables
-In **Settings** &rarr; **Secrets and variables** &rarr; **Actions**:
+In repository **Settings** &rarr; **Secrets and variables** &rarr; **Actions**:
 - `REPO360_APP_ID`: Numeric GitHub App ID (Variable or Secret)
 - `REPO360_APP_PRIVATE_KEY`: RSA private key `.pem` string (Secret)
 - `AI_API_KEY`: *(Optional)* API key for Google Gemini, OpenAI, or Anthropic (Secret)
-- `AI_MODEL`: *(Optional)* Model override, e.g. `gpt-4o` or `claude-3-5-sonnet-20241022` (Variable, defaults to `gemini-3.5-flash`)
 
 #### 2. Workflow Example (`.github/workflows/audit.yml`)
 
@@ -77,18 +94,28 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Weekly: Mondays at 06:00 UTC
 
+permissions:
+  contents: read
+
 jobs:
   governance-audit:
     name: "Execute Advisory Audit"
     runs-on: ubuntu-latest
 
     steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
       - name: "Run Repo360 Action"
         uses: Adithya-Meda/repo360@main
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
           ai_api_key: ${{ secrets.AI_API_KEY }}
+          inventory: "repos.csv"
+          # Optional additional metrics
+          collect_activity: "false"
+          collect_runners: "false"
 ```
 
 ---
@@ -98,6 +125,7 @@ jobs:
 - **Org Governance:** Organization rulesets, secret scanning push protection, runner group least privilege isolation, default workflow token permissions.
 - **Repository Security:** Branch protection review gates, `CODEOWNERS` validation, GitHub Actions commit SHA pinning, workflow concurrency groups, Dependabot.
 - **Developer Enablement:** Dev containers (`devcontainer.json`), GitHub Copilot instructions, standardized issue & PR templates, pre-commit hooks.
+- **Infrastructure & Usage:** Actions self-hosted runner fleet utilization, queue wait times, SLA breaches (>60s), and contributor adoption patterns.
 
 ---
 

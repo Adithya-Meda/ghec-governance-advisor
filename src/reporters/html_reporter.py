@@ -1,4 +1,4 @@
-"""Interactive Standalone HTML Report Generator with Before/After Comparisons."""
+"""Interactive Single-Page HTML Audit Dashboard Generator."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ..checks.base import CheckResult, CheckStatus
 
 
 class HTMLReporter(BaseReporter):
-    """Generates comprehensive, self-contained HTML reports with before/after diffs."""
+    """Generates an interactive HTML audit dashboard with KPI scorecards, playbooks, and filters."""
 
     def generate(
         self,
@@ -34,10 +34,46 @@ class HTMLReporter(BaseReporter):
         compliance_pct = round((passed / effective_total) * 100, 1)
         generated_at = self.get_local_timestamp()
 
-        # Render finding rows (granular repository drill-down)
+        # Organization Breakdown Metrics
+        org_metrics = self.build_organization_metrics(results)
+        org_rows_html = []
+        for org in org_metrics:
+            score = org["compliance_score"]
+            score_class = "score-pass" if score >= 80 else ("score-warn" if score >= 50 else "score-fail")
+            bar_color = "#238636" if score >= 80 else ("#d29922" if score >= 50 else "#f85149")
+            status_badge_style = (
+                "background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid rgba(35, 134, 54, 0.4);"
+                if score >= 80
+                else (
+                    "background: rgba(210, 153, 34, 0.2); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.4);"
+                    if score >= 50
+                    else "background: rgba(248, 81, 73, 0.2); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4);"
+                )
+            )
+            org_rows_html.append(f"""
+            <tr>
+              <td><strong style="color: #f0f6fc;">{html.escape(org["org_name"])}</strong></td>
+              <td>{org["repo_count"]} repo(s)</td>
+              <td>{org["total"]}</td>
+              <td><span class="badge badge-pass">{org["passed"]}</span></td>
+              <td><span class="badge {'badge-fail' if org['failed'] > 0 else ''}" style="{'background:#21262d; color:#8b949e;' if org['failed'] == 0 else ''}">{org["failed"]}</span></td>
+              <td><span class="badge {'badge-warn' if org['warned'] > 0 else ''}" style="{'background:#21262d; color:#8b949e;' if org['warned'] == 0 else ''}">{org["warned"]}</span></td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="flex: 1; background: #21262d; border-radius: 4px; height: 8px; overflow: hidden; min-width: 60px;">
+                    <div style="width: {score}%; background: {bar_color}; height: 100%;"></div>
+                  </div>
+                  <strong class="{score_class}" style="min-width: 44px; text-align: right;">{score}%</strong>
+                </div>
+              </td>
+              <td><span class="badge" style="{status_badge_style}">{org["status"]}</span></td>
+            </tr>
+            """)
+
+        # Render finding cards (compact for pass, actionable drill-down for issues)
         cards_html = [self._render_card(idx, r) for idx, r in enumerate(results)]
 
-        # Render consolidated fleet playbook items
+        # Render consolidated fleet playbook items (centralized strictly by check_id)
         clusters = self.build_remediation_clusters(results)
         playbook_cards_html = [self._render_playbook_card(idx, c) for idx, c in enumerate(clusters)]
         playbook_count = len(clusters)
@@ -99,29 +135,30 @@ class HTMLReporter(BaseReporter):
       margin: 0 auto;
     }}
     header {{
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 20px;
-      margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
-      align-items: flex-end;
-      flex-wrap: wrap;
-      gap: 16px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
     }}
     h1 {{
-      color: var(--text-heading);
       margin: 0 0 6px 0;
-      font-size: 26px;
+      font-size: 24px;
+      color: var(--text-heading);
     }}
     .timestamp {{
       font-size: 13px;
       color: #8b949e;
     }}
+    .timestamp strong {{
+      color: var(--primary);
+    }}
     .kpi-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 16px;
-      margin-bottom: 28px;
+      margin-bottom: 24px;
     }}
     .kpi-card {{
       background: var(--card-bg);
@@ -130,149 +167,186 @@ class HTMLReporter(BaseReporter):
       padding: 16px;
       text-align: center;
     }}
-    .kpi-card.kpi-card-ai {{
-      border-color: rgba(137, 87, 229, 0.4);
-      background: linear-gradient(180deg, rgba(121, 40, 202, 0.08) 0%, rgba(22, 27, 34, 1) 100%);
-    }}
-    .kpi-val {{
-      font-size: 32px;
-      font-weight: 700;
-      color: var(--text-heading);
-      margin-top: 4px;
+    .kpi-card-ai {{
+      border-color: rgba(111, 66, 193, 0.4);
+      background: linear-gradient(180deg, rgba(111, 66, 193, 0.08) 0%, var(--card-bg) 100%);
     }}
     .kpi-label {{
       font-size: 12px;
+      color: #8b949e;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #8b949e;
-      font-weight: 600;
+      margin-bottom: 6px;
     }}
-    .score-pass {{ color: #3fb950; }}
-    .score-warn {{ color: #d29922; }}
-    .score-fail {{ color: #f85149; }}
+    .kpi-val {{
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }}
+    .score-pass {{ color: #3fb950 !important; }}
+    .score-warn {{ color: #e3b341 !important; }}
+    .score-fail {{ color: #f85149 !important; }}
 
+    /* Organization Breakdown Card */
+    .org-breakdown-card {{
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }}
+    .org-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }}
+    .org-header h3 {{
+      margin: 0;
+      font-size: 16px;
+      color: var(--text-heading);
+    }}
+    .org-table-wrapper {{
+      overflow-x: auto;
+    }}
+    .org-table {{
+      width: 100%;
+      border-collapse: collapse;
+    }}
+    .org-table th {{
+      text-align: left;
+      font-size: 11px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }}
+    .org-table td {{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+      font-size: 13px;
+    }}
+    .org-table tr:last-child td {{
+      border-bottom: none;
+    }}
+
+    /* View Switcher */
     .view-switcher-bar {{
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 20px;
       background: var(--card-bg);
-      padding: 12px 16px;
-      border-radius: 8px;
       border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 20px;
     }}
     .view-switcher {{
-      display: inline-flex;
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 3px;
-      gap: 4px;
+      display: flex;
+      gap: 8px;
     }}
     .view-btn {{
       background: transparent;
-      border: none;
-      color: var(--text);
+      border: 1px solid transparent;
+      color: #8b949e;
       padding: 6px 14px;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 13px;
       font-weight: 600;
       transition: all 0.15s ease;
     }}
     .view-btn:hover {{
-      color: #fff;
+      color: var(--text-heading);
+      background: #21262d;
     }}
     .view-btn.active {{
       background: #1f6feb;
       color: #fff;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
     }}
     .view-desc {{
-      font-size: 13px;
+      font-size: 12px;
       color: #8b949e;
     }}
-    
+
+    /* Cards & Controls */
     .controls {{
       display: flex;
-      justify-content: space-between;
-      align-items: center;
       flex-wrap: wrap;
       gap: 12px;
-      margin-bottom: 20px;
-      background: var(--card-bg);
-      padding: 12px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
+      margin-bottom: 16px;
     }}
     .btn-group {{
       display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
     }}
     .tab-btn {{
-      background: transparent;
-      border: 1px solid var(--border);
+      background: var(--card-bg);
+      border: none;
       color: var(--text);
       padding: 6px 14px;
-      border-radius: 6px;
       cursor: pointer;
       font-size: 13px;
-      font-weight: 600;
-      transition: all 0.15s ease;
+      border-right: 1px solid var(--border);
     }}
-    .tab-btn:hover {{
-      background: #21262d;
-    }}
-    .tab-btn.active {{
-      background: #1f6feb;
-      border-color: #1f6feb;
-      color: #fff;
-    }}
-    .tab-btn.ai-tab-btn:hover {{
-      border-color: #8957e5;
-      color: #d2a8ff;
-    }}
-    .tab-btn.ai-tab-btn.active {{
-      background: linear-gradient(135deg, #7928ca, #ff0080);
-      border-color: #8957e5;
-      color: #fff;
-      box-shadow: 0 0 10px rgba(121, 40, 202, 0.4);
-    }}
+    .tab-btn:last-child {{ border-right: none; }}
+    .tab-btn:hover {{ background: #21262d; }}
+    .tab-btn.active {{ background: #1f6feb; color: #fff; font-weight: 600; }}
+    .tab-btn.ai-tab-btn.active {{ background: #6f42c1; color: #fff; }}
+
     .card {{
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 18px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+      transition: border-color 0.15s ease;
     }}
-    .card:hover {{
-      border-color: #58a6ff;
+    .card:hover {{ border-color: #58a6ff; }}
+    .card-ai {{
+      border-left: 4px solid #6f42c1;
+      background: linear-gradient(180deg, rgba(111, 66, 193, 0.04) 0%, var(--card-bg) 100%);
     }}
-    .card.card-ai {{
-      border-left: 4px solid #8957e5;
-      box-shadow: 0 4px 14px rgba(137, 87, 229, 0.12);
+    .pass-card {{
+      padding: 10px 16px;
+      margin-bottom: 8px;
+      background: var(--card-bg);
+      border: 1px solid rgba(48, 54, 61, 0.5);
     }}
-    .card.card-ai:hover {{
-      border-color: #a371f7;
+    .pass-compact-row {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }}
+    .pass-check-title {{
+      font-weight: 600;
+      color: var(--text-heading);
+      font-size: 14px;
+    }}
+    .pass-scope {{
+      color: #8b949e;
+      font-size: 12px;
+    }}
+    .pass-badges {{
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }}
+
     .card-header {{
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       margin-bottom: 12px;
-      flex-wrap: wrap;
-      gap: 8px;
     }}
     .card-title {{
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-heading);
       margin: 0;
+      font-size: 16px;
+      color: var(--text-heading);
     }}
     .badges {{
       display: flex;
@@ -281,52 +355,37 @@ class HTMLReporter(BaseReporter):
       flex-wrap: wrap;
     }}
     .badge {{
-      display: inline-block;
       font-size: 11px;
-      font-weight: 700;
       padding: 3px 8px;
       border-radius: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
     }}
-    .badge-pass {{ background: var(--pass-bg); color: #3fb950; border: 1px solid rgba(46, 160, 67, 0.4); }}
-    .badge-warn {{ background: var(--warn-bg); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.4); }}
+    .badge-pass {{ background: var(--pass-bg); color: #3fb950; border: 1px solid rgba(35, 134, 54, 0.4); }}
+    .badge-warn {{ background: var(--warn-bg); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.4); }}
     .badge-fail {{ background: var(--fail-bg); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4); }}
-    .badge-skip {{ background: #21262d; color: #8b949e; border: 1px solid var(--border); }}
-    .badge-sev-critical {{ background: rgba(248, 81, 73, 0.2); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.4); }}
-    .badge-sev-high {{ background: rgba(219, 109, 40, 0.2); color: #db6d28; border: 1px solid rgba(219, 109, 40, 0.4); }}
-    .badge-sev-medium {{ background: rgba(210, 153, 34, 0.2); color: #d29922; border: 1px solid rgba(210, 153, 34, 0.4); }}
-    .badge-sev-low {{ background: rgba(56, 139, 253, 0.2); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.4); }}
-    .badge-ai {{
-      background: linear-gradient(135deg, #7928ca, #ff0080);
-      color: #fff !important;
-      font-weight: 700;
-      border: none;
-      box-shadow: 0 0 8px rgba(121, 40, 202, 0.4);
-    }}
+    .badge-ai {{ background: rgba(111, 66, 193, 0.2); color: #bc8cff; border: 1px solid rgba(111, 66, 193, 0.5); }}
     .badge-standard {{ background: #21262d; color: #8b949e; border: 1px solid var(--border); }}
-    .badge-file {{
-      background: #161b22;
-      color: #58a6ff;
-      border: 1px solid rgba(88, 166, 255, 0.3);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 11px;
-    }}
-    
+    .badge-file {{ background: rgba(56, 139, 253, 0.15); color: #58a6ff; font-family: monospace; font-size: 11px; }}
+    .badge-sev-critical {{ background: rgba(248, 81, 73, 0.3); color: #ff7b72; font-weight: 700; }}
+    .badge-sev-high {{ background: rgba(248, 81, 73, 0.2); color: #f85149; }}
+    .badge-sev-medium {{ background: rgba(210, 153, 34, 0.2); color: #e3b341; }}
+    .badge-sev-low {{ background: #21262d; color: #8b949e; }}
+
     .fleet-scope-banner {{
-      background: #0d1117;
-      border: 1px solid var(--border);
+      background: rgba(88, 166, 255, 0.08);
+      border: 1px solid rgba(88, 166, 255, 0.2);
       border-radius: 6px;
       padding: 10px 14px;
-      margin: 12px 0 14px 0;
+      margin-bottom: 12px;
     }}
     .fleet-scope-header {{
-      font-size: 13px;
+      font-size: 12px;
       color: #8b949e;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }}
     .fleet-scope-header strong {{
-      color: #58a6ff;
+      color: var(--primary);
     }}
     .repo-chips-list {{
       display: flex;
@@ -338,115 +397,121 @@ class HTMLReporter(BaseReporter):
       border: 1px solid var(--border);
       color: #c9d1d9;
       padding: 2px 8px;
-      border-radius: 12px;
+      border-radius: 4px;
       font-size: 11px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    }}
-    .playbook-code-block {{
-      border-radius: 6px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      margin-top: 12px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 12px;
-    }}
-    .playbook-code-block .code-header {{
-      padding: 6px 12px;
-      font-weight: 600;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: #16241b;
-      color: #3fb950;
-    }}
-    .playbook-code-block.ai-code .code-header {{
-      background: #241438;
-      color: #d2a8ff;
-    }}
-    .playbook-code-block pre {{
-      margin: 0;
-      padding: 10px 12px;
-      background: var(--code-bg);
-      white-space: pre-wrap;
-      word-break: break-all;
+      font-family: monospace;
     }}
 
     .meta-line {{
       font-size: 13px;
       color: #8b949e;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }}
-    .meta-line strong {{
-      color: #c9d1d9;
-    }}
+    .meta-line strong {{ color: var(--text-heading); }}
     .explanation {{
-      font-size: 14px;
-      margin-bottom: 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
       color: #c9d1d9;
+      line-height: 1.5;
+    }}
+    .playbook-code-block {{
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 12px 0;
+    }}
+    .playbook-code-block.ai-code {{
+      border-color: rgba(111, 66, 193, 0.5);
+    }}
+    .playbook-code-block .code-header {{
+      background: #161b22;
+      border-bottom: 1px solid var(--border);
+      padding: 6px 12px;
+      font-size: 11px;
+      color: #8b949e;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }}
+    .playbook-code-block.ai-code .code-header {{
+      background: rgba(111, 66, 193, 0.15);
+      color: #d2a8ff;
+    }}
+    .playbook-code-block pre {{
+      margin: 0;
+      padding: 12px 14px;
+      font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      color: #e6edf3;
+      line-height: 1.45;
     }}
     .diff-container {{
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
-      margin-top: 14px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 12px;
+      margin-top: 12px;
+      margin-bottom: 12px;
     }}
     @media (max-width: 768px) {{
       .diff-container {{ grid-template-columns: 1fr; }}
     }}
     .diff-box {{
+      background: var(--code-bg);
+      border: 1px solid var(--border);
       border-radius: 6px;
       overflow: hidden;
-      border: 1px solid var(--border);
     }}
     .diff-header {{
       padding: 6px 12px;
-      font-weight: 600;
       font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
     }}
-    .diff-box.before .diff-header {{ background: #211c1d; color: #f85149; }}
-    .diff-box.after .diff-header {{ background: #16241b; color: #3fb950; }}
-    .diff-box.after.ai-diff .diff-header {{ background: #241438; color: #d2a8ff; }}
+    .diff-box.before .diff-header {{ background: rgba(248, 81, 73, 0.15); color: #f85149; }}
+    .diff-box.after .diff-header {{ background: rgba(46, 160, 67, 0.15); color: #3fb950; }}
+    .diff-box.after.ai-diff .diff-header {{
+      background: rgba(111, 66, 193, 0.2);
+      color: #bc8cff;
+    }}
     .diff-box pre {{
       margin: 0;
       padding: 10px 12px;
-      background: var(--code-bg);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      overflow-x: auto;
       white-space: pre-wrap;
       word-break: break-all;
     }}
     .doc-link {{
       display: inline-block;
-      margin-top: 10px;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--primary);
       text-decoration: none;
+      margin-top: 8px;
     }}
     .doc-link:hover {{ text-decoration: underline; }}
     .ai-briefing {{
-      background: linear-gradient(180deg, rgba(121, 40, 202, 0.12) 0%, rgba(22, 27, 34, 1) 100%);
-      border: 1px solid rgba(121, 40, 202, 0.4);
+      background: linear-gradient(90deg, rgba(111, 66, 193, 0.15) 0%, rgba(88, 166, 255, 0.08) 100%);
+      border: 1px solid rgba(111, 66, 193, 0.4);
       border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 24px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
     }}
     .ai-badge {{
-      background: linear-gradient(135deg, #7928ca, #ff0080);
-      color: #fff;
-      font-weight: 700;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      padding: 4px 10px;
-      border-radius: 12px;
       display: inline-block;
-      margin-bottom: 12px;
+      background: #6f42c1;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
     }}
     .ai-briefing-text {{
-      color: #e6edf3;
       font-size: 14px;
+      color: var(--text-heading);
       line-height: 1.6;
       white-space: pre-wrap;
     }}
@@ -501,6 +566,33 @@ class HTMLReporter(BaseReporter):
       </div>
     </div>
 
+    <!-- Organization Governance & Compliance Breakdown -->
+    <div class="org-breakdown-card">
+      <div class="org-header">
+        <h3>Organization Governance & Compliance Breakdown</h3>
+        <span class="badge" style="background: #21262d; color: #c9d1d9;">{len(org_metrics)} Organization(s) Audited</span>
+      </div>
+      <div class="org-table-wrapper">
+        <table class="org-table">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Audited Repos</th>
+              <th>Total Controls</th>
+              <th>Controls Present (PASS)</th>
+              <th>Missing (FAIL)</th>
+              <th>Review Items (WARN)</th>
+              <th>Compliance Score</th>
+              <th>Posture Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {"".join(org_rows_html)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     {ai_briefing_block}
 
     <div class="ai-safety-warning">
@@ -534,10 +626,11 @@ class HTMLReporter(BaseReporter):
           <button class="tab-btn" onclick="filterPersona('contributor')">Contributor / DX</button>
         </div>
         <div class="btn-group">
-          <button class="tab-btn active" onclick="filterStatus('all')">All Statuses</button>
-          <button class="tab-btn" onclick="filterStatus('FAIL')">FAIL Only</button>
-          <button class="tab-btn" onclick="filterStatus('WARN')">WARN Only</button>
-          <button class="tab-btn" onclick="filterStatus('PASS')">PASS Only</button>
+          <button class="tab-btn" onclick="filterStatus('all')">All Statuses</button>
+          <button class="tab-btn active" onclick="filterStatus('actionable')">Actionable Only ({warned + failed})</button>
+          <button class="tab-btn" onclick="filterStatus('FAIL')">FAIL Only ({failed})</button>
+          <button class="tab-btn" onclick="filterStatus('WARN')">WARN Only ({warned})</button>
+          <button class="tab-btn" onclick="filterStatus('PASS')">PASS Only ({passed})</button>
         </div>
         <div class="btn-group">
           <button class="tab-btn active" onclick="filterSource('all')">All Sources</button>
@@ -554,7 +647,7 @@ class HTMLReporter(BaseReporter):
 
   <script>
     let activePersona = 'all';
-    let activeStatus = 'all';
+    let activeStatus = 'actionable';
     let activeSource = 'all';
 
     function switchView(view) {{
@@ -575,7 +668,8 @@ class HTMLReporter(BaseReporter):
         btnPlaybook.classList.remove('active');
         playbookContainer.style.display = 'none';
         repoContainer.style.display = 'block';
-        desc.textContent = 'Granular findings and evaluations for individual repositories across all personas.';
+        desc.textContent = 'Granular check outcome drill-down across individual repositories and governance scopes.';
+        applyFilters();
       }}
     }}
 
@@ -598,36 +692,34 @@ class HTMLReporter(BaseReporter):
     }}
 
     function updateButtons(groupIndex, value) {{
-      const groups = document.querySelectorAll('.controls .btn-group');
-      if (groups.length > groupIndex) {{
-        groups[groupIndex].querySelectorAll('.tab-btn').forEach(btn => {{
-          if (btn.getAttribute('onclick').includes("'" + value + "'")) {{
-            btn.classList.add('active');
-          }} else {{
-            btn.classList.remove('active');
-          }}
-        }});
-      }}
+      const groups = document.querySelectorAll('.btn-group');
+      if (!groups[groupIndex]) return;
+      const btns = groups[groupIndex].querySelectorAll('.tab-btn');
+      btns.forEach(btn => {{
+        const btnVal = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+        btn.classList.toggle('active', btnVal === value);
+      }});
     }}
 
     function applyFilters() {{
-      const cards = document.querySelectorAll('.finding-card');
+      const cards = document.querySelectorAll('#findings-container .finding-card');
       cards.forEach(card => {{
-        const cardPersona = card.getAttribute('data-persona');
-        const cardStatus = card.getAttribute('data-status');
-        const cardSource = card.getAttribute('data-source');
-        
-        const matchPersona = (activePersona === 'all' || cardPersona === activePersona);
-        const matchStatus = (activeStatus === 'all' || cardStatus === activeStatus);
-        const matchSource = (activeSource === 'all' || cardSource === activeSource);
+        const persona = card.getAttribute('data-persona');
+        const status = card.getAttribute('data-status');
+        const source = card.getAttribute('data-source');
 
-        if (matchPersona && matchStatus && matchSource) {{
-          card.style.display = 'block';
-        }} else {{
-          card.style.display = 'none';
-        }}
+        const matchPersona = (activePersona === 'all' || persona === activePersona);
+        const matchStatus = (activeStatus === 'all')
+          || (activeStatus === 'actionable' && (status === 'FAIL' || status === 'WARN'))
+          || (status === activeStatus);
+        const matchSource = (activeSource === 'all' || source === activeSource);
+
+        card.style.display = (matchPersona && matchStatus && matchSource) ? 'block' : 'none';
       }});
     }}
+
+    // Apply default actionable filter on initial script load
+    applyFilters();
   </script>
 </body>
 </html>
@@ -706,17 +798,33 @@ class HTMLReporter(BaseReporter):
         is_ai = self.is_ai_result(r)
         source_type = "ai" if is_ai else "standard"
         target_file = self.infer_target_file(r.check_id)
+        file_badge = f"""<span class="badge badge-file">{html.escape(target_file)}</span>"""
+
+        # Sleek, compact card for passing checks (saves 85% vertical scrolling)
+        if r.status == CheckStatus.PASS:
+            return f"""
+            <div class="card finding-card pass-card" data-persona="{r.persona.value}" data-status="PASS" data-source="{source_type}">
+              <div class="pass-compact-row">
+                <span class="badge badge-pass">PASS</span>
+                <span class="pass-check-title">{html.escape(r.check_name)}</span>
+                <span class="pass-scope">{html.escape(r.org_name)} / {html.escape(r.repo_name)}</span>
+                <div class="pass-badges">
+                  {file_badge}
+                  <span class="badge" style="background:#21262d; color:#8b949e;">{r.category}</span>
+                  <span class="badge" style="background:#21262d; color:#8b949e;">{r.persona.value.upper()}</span>
+                </div>
+              </div>
+            </div>
+            """
 
         card_extra_class = " card-ai" if is_ai else ""
         stack_label = r.extra_details.get("detected_stack") or "Detected Framework"
 
-        source_badge = ""
-        if is_ai:
-            source_badge = f"""<span class="badge badge-ai">AI Tailored ({html.escape(stack_label)})</span>"""
-        else:
-            source_badge = """<span class="badge badge-standard">Standard Policy</span>"""
-
-        file_badge = f"""<span class="badge badge-file">{html.escape(target_file)}</span>"""
+        source_badge = (
+            f"""<span class="badge badge-ai">AI Tailored ({html.escape(stack_label)})</span>"""
+            if is_ai
+            else """<span class="badge badge-standard">Standard Policy</span>"""
+        )
 
         diff_block = ""
         if r.remediation_snippet_before or r.remediation_snippet_after:

@@ -1,0 +1,3 @@
+org,repo,enabled
+# Add target repositories below. Use '*' in the repo column to scan all repositories across an organization.
+my-org,*,true

@@ -218,3 +218,18 @@ def test_formula_injection_defense() -> None:
     finally:
         if os.path.exists(xlsx_path):
             os.remove(xlsx_path)
+
+
+def test_local_timestamp_dd_mm_yyyy_format() -> None:
+    """Verify local timestamp conforms to DD-MM-YYYY format."""
+    import re
+    from src.reporters.base_reporter import BaseReporter
+
+    ts = BaseReporter.get_local_timestamp()
+    # Expect: DD-MM-YYYY HH:MM:SS TZ (e.g. 04-11-2026 19:10:00 IST)
+    match = re.match(r"^(\d{2})-(\d{2})-(\d{4})\s+\d{2}:\d{2}:\d{2}(?:\s+[A-Za-z0-9_-]+)?$", ts)
+    assert match is not None, f"Timestamp '{ts}' does not match DD-MM-YYYY pattern."
+    day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    assert 1 <= day <= 31
+    assert 1 <= month <= 12
+    assert year >= 2024

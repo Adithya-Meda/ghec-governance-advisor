@@ -36,7 +36,7 @@ class GitHubAppAuth:
             private_key: Path to PEM file, or raw PEM string content.
             api_base_url: Base API URL for GitHub (defaults to https://api.github.com).
         """
-        self.app_id = int(app_id)
+        self.app_id = int(app_id) if str(app_id).isdigit() else str(app_id)
         self.installation_id = int(installation_id) if installation_id else None
         self.api_base_url = api_base_url.rstrip("/")
         self._private_key_pem = self._load_private_key(private_key)

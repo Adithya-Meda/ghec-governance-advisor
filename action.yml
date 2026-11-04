@@ -53,6 +53,18 @@ inputs:
     description: "Optional AI model identifier (e.g. 'gemini-3.5-flash', 'gpt-4o', 'claude-3-5-sonnet-20241022'). Provider is auto-detected from model name."
     required: false
     default: "gemini-3.5-flash"
+  collect_activity:
+    description: "Collect user activity and contributor metrics ('true' or 'false')"
+    required: false
+    default: "false"
+  collect_runners:
+    description: "Collect Actions self-hosted runner fleet metrics ('true' or 'false')"
+    required: false
+    default: "false"
+  lookback_days:
+    description: "Lookback window in days for user activity and runner metrics"
+    required: false
+    default: "90"
   # Legacy backward-compatibility inputs
   gemini_api_key:
     description: "Legacy alias for ai_api_key"
@@ -115,6 +127,22 @@ runs:
           CMD="$CMD --inventory ${{ inputs.inventory }}"
         fi
         eval $CMD
+
+        if [ "${{ inputs.collect_activity }}" = "true" ]; then
+          ACT_CMD="repo360 activity --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.inventory }}" ]; then
+            ACT_CMD="$ACT_CMD --repos ${{ inputs.inventory }}"
+          fi
+          eval $ACT_CMD
+        fi
+
+        if [ "${{ inputs.collect_runners }}" = "true" ]; then
+          RUN_CMD="repo360 runners --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.inventory }}" ]; then
+            RUN_CMD="$RUN_CMD --repos ${{ inputs.inventory }}"
+          fi
+          eval $RUN_CMD
+        fi
 
     - name: "Publish Audit Reports Artifact"
       if: always() && inputs.upload_artifact == 'true'

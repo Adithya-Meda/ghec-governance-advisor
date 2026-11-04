@@ -25,7 +25,7 @@ class BaseReporter(ABC):
 
     @staticmethod
     def get_local_timestamp() -> str:
-        """Return formatted local timestamp with smart timezone detection (e.g. 2026-11-04 16:22:00 IST)."""
+        """Return formatted local timestamp with smart timezone detection in DD-MM-YYYY format (e.g. 04-11-2026 16:22:00 IST)."""
         now = datetime.now().astimezone()
         tz_name = now.tzname() or "UTC"
         tz_abbreviations = {
@@ -50,7 +50,7 @@ class BaseReporter(ABC):
             "AUS Eastern Standard Time": "AEST",
         }
         tz_abbr = tz_abbreviations.get(tz_name, tz_name)
-        return f"{now.strftime('%Y-%m-%d %H:%M:%S')} {tz_abbr}"
+        return f"{now.strftime('%d-%m-%Y %H:%M:%S')} {tz_abbr}"
 
     @staticmethod
     def sanitize_spreadsheet_value(value: object) -> object:
@@ -102,7 +102,7 @@ class BaseReporter(ABC):
 
     @classmethod
     def build_remediation_clusters(cls, results: List[CheckResult]) -> List[Dict[str, Any]]:
-        """Cluster actionable WARN/FAIL findings by check and tech stack for consolidated fleet playbooks."""
+        """Cluster actionable WARN/FAIL findings strictly by check ID for consolidated, centralized fleet playbooks."""
         from ..checks.base import CheckStatus
 
         clusters: Dict[str, Dict[str, Any]] = {}
@@ -111,8 +111,8 @@ class BaseReporter(ABC):
             if r.status not in (CheckStatus.WARN, CheckStatus.FAIL):
                 continue
 
+            cluster_key = r.check_id
             stack = r.extra_details.get("detected_stack") or ""
-            cluster_key = f"{r.check_id}:{stack}" if stack else r.check_id
 
             if cluster_key not in clusters:
                 remediation_code = r.remediation_snippet_after or r.recommended_state
@@ -123,7 +123,7 @@ class BaseReporter(ABC):
                     "category": r.category,
                     "severity": r.severity,
                     "persona": r.persona,
-                    "detected_stack": stack or "General Platform",
+                    "detected_stacks": set(),
                     "target_file": cls.infer_target_file(r.check_id),
                     "current_state": r.current_state,
                     "recommended_state": r.recommended_state,
@@ -136,6 +136,18 @@ class BaseReporter(ABC):
                     "affected_repos": [],
                 }
 
+            # Prioritize AI-tailored canonical configuration if present
+            if cls.is_ai_result(r) and not clusters[cluster_key]["is_ai"]:
+                clusters[cluster_key]["is_ai"] = True
+                clusters[cluster_key]["ai_model"] = r.extra_details.get("ai_model", "")
+                if r.remediation_snippet_after:
+                    clusters[cluster_key]["remediation_code"] = r.remediation_snippet_after
+                if r.remediation_snippet_before:
+                    clusters[cluster_key]["remediation_snippet_before"] = r.remediation_snippet_before
+
+            if stack:
+                clusters[cluster_key]["detected_stacks"].add(stack)
+
             repo_label = r.repo_name if r.repo_name != "Organization-Wide" else f"{r.org_name} (Org-Wide)"
             if repo_label not in clusters[cluster_key]["affected_repos"]:
                 clusters[cluster_key]["affected_repos"].append(repo_label)
@@ -145,6 +157,8 @@ class BaseReporter(ABC):
         for c in cluster_list:
             c["affected_count"] = len(c["affected_repos"])
             c["affected_repos"].sort()
+            stacks = sorted(c["detected_stacks"])
+            c["detected_stack"] = ", ".join(stacks) if stacks else "General Platform"
 
         cluster_list.sort(
             key=lambda x: (
@@ -153,4 +167,68 @@ class BaseReporter(ABC):
             )
         )
         return cluster_list
+
+    @classmethod
+    def build_organization_metrics(cls, results: List[CheckResult]) -> List[Dict[str, Any]]:
+        """Compute organization-level compliance metrics, repo counts, and percentage breakdowns."""
+        from ..checks.base import CheckSeverity, CheckStatus
+
+        org_data: Dict[str, Dict[str, Any]] = {}
+        for r in results:
+            org = r.org_name or "Organization"
+            if org not in org_data:
+                org_data[org] = {
+                    "org_name": org,
+                    "repos": set(),
+                    "total": 0,
+                    "passed": 0,
+                    "warned": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "critical_high": 0,
+                }
+            if r.repo_name and r.repo_name != "Organization-Wide":
+                org_data[org]["repos"].add(r.repo_name)
+            org_data[org]["total"] += 1
+
+            if r.status == CheckStatus.PASS:
+                org_data[org]["passed"] += 1
+            elif r.status == CheckStatus.WARN:
+                org_data[org]["warned"] += 1
+                if r.severity in (CheckSeverity.CRITICAL, CheckSeverity.HIGH):
+                    org_data[org]["critical_high"] += 1
+            elif r.status == CheckStatus.FAIL:
+                org_data[org]["failed"] += 1
+                if r.severity in (CheckSeverity.CRITICAL, CheckSeverity.HIGH):
+                    org_data[org]["critical_high"] += 1
+            elif r.status == CheckStatus.SKIPPED:
+                org_data[org]["skipped"] += 1
+
+        org_list: List[Dict[str, Any]] = []
+        for org, data in sorted(org_data.items()):
+            effective = max(data["total"] - data["skipped"], 1)
+            score = round((data["passed"] / effective) * 100, 1)
+            repo_count = len(data["repos"])
+
+            if score >= 80:
+                status_label = "COMPLIANT"
+            elif score >= 50:
+                status_label = "REVIEW NEEDED"
+            else:
+                status_label = "AT RISK"
+
+            org_list.append({
+                "org_name": org,
+                "repo_count": repo_count,
+                "total": data["total"],
+                "passed": data["passed"],
+                "warned": data["warned"],
+                "failed": data["failed"],
+                "skipped": data["skipped"],
+                "compliance_score": score,
+                "critical_high": data["critical_high"],
+                "status": status_label,
+            })
+
+        return org_list
 

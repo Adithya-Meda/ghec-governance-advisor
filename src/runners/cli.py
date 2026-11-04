@@ -1,0 +1,206 @@
+"""CLI command orchestrator for Actions self-hosted runners analytics."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from ..activity.collector import resolve_activity_targets
+from ..activity.models import ActivityConfig
+from ..auth.github_app_auth import GitHubAppAuth
+from ..common.client import ResilientGitHubClient
+from ..common.inventory import load_flexible_repo_entries
+from ..credentials import resolve_runtime_credentials
+from .collector import build_runner_rows, collect_runners_and_metrics
+from .models import ORG_RUNNER_HEADERS, RUNNER_HEADERS, RunnersConfig
+from .reporter import write_runners_csv, write_runners_workbook
+
+logger = logging.getLogger("repo360.runners")
+
+
+def print_runners_scorecard(
+    runner_rows: List[list],
+    org_runner_rows: List[list],
+    xlsx_path: Path,
+    csv_path: Path,
+    elapsed_seconds: float,
+) -> None:
+    """Print an executive color-coded scorecard to stdout."""
+    G = "\033[92m"
+    Y = "\033[93m"
+    R = "\033[91m"
+    C = "\033[96m"
+    B = "\033[1m"
+    X = "\033[0m"
+
+    total_runners = len(runner_rows)
+    online_count = sum(1 for r in runner_rows if len(r) > 9 and str(r[9]).capitalize() == "Online")
+    offline_count = sum(1 for r in runner_rows if len(r) > 9 and str(r[9]).capitalize() in ("Offline", "Ephemeral"))
+    busy_count = sum(1 for r in runner_rows if len(r) > 10 and str(r[10]).capitalize() == "Busy")
+    ephemeral_count = sum(1 for r in runner_rows if len(r) > 8 and "Ephemeral" in str(r[8]))
+    total_jobs = sum(r[13] for r in runner_rows if len(r) > 13 and isinstance(r[13], int))
+    total_compute_hours = sum(r[19] for r in runner_rows if len(r) > 19 and isinstance(r[19], (int, float)))
+    total_sla_breaches = sum(r[26] for r in runner_rows if len(r) > 26 and isinstance(r[26], int))
+
+    elapsed_str = (
+        f"{int(elapsed_seconds // 60)}m {int(elapsed_seconds % 60)}s"
+        if elapsed_seconds >= 60
+        else f"{elapsed_seconds:.1f}s"
+    )
+
+    avail_pct = (online_count / total_runners * 100) if total_runners else 100.0
+    avail_color = G if avail_pct >= 80 else (Y if avail_pct >= 50 else R)
+
+    print(f"\n{C}{'=' * 76}{X}")
+    print(f"{B}{C}   REPO360 ACTIONS SELF-HOSTED RUNNER FLEET SCORECARD{X}")
+    print(f"{C}{'=' * 76}{X}")
+    print(f"   {B}Organizations Monitored :{X} {len(org_runner_rows)}")
+    print(f"   {B}Total Runners in Fleet  :{X} {total_runners}")
+    print(f"   {B}Online / Operational    :{X} {G}{online_count:<5} Online{X}")
+    print(f"   {B}Offline / Unreachable   :{X} {R if offline_count else G}{offline_count:<5} Offline{X}")
+    print(f"   {B}Currently Busy (Active) :{X} {Y}{busy_count:<5} Busy{X}")
+    print(f"   {B}Autoscaling (Ephemeral) :{X} {ephemeral_count:<5} Ephemeral")
+    print(f"   {B}Fleet Availability Rate :{X} {avail_color}{avail_pct:.1f}%{X}")
+    print(f"   {B}Workflow Jobs Executed  :{X} {B}{total_jobs:,}{X}")
+    print(f"   {B}Total Compute Consumed  :{X} {total_compute_hours:.2f} Hours")
+    print(f"   {B}Queue SLA Delays (>60s) :{X} {R if total_sla_breaches else G}{total_sla_breaches} breaches{X}")
+    print(f"   {B}Duration                :{X} {elapsed_str}")
+    print(f"{C}{'-' * 76}{X}")
+    print(f"   {B}Executive Workbook (XLSX) :{X} {xlsx_path}")
+    print(f"   {B}Fleet Inventory Feed (CSV):{X} {csv_path}")
+    print(f"{C}{'=' * 76}{X}")
+    print(f"{G}{B}   [SUCCESS] Runner analysis completed across {total_runners} runners in {elapsed_str}.{X}\n")
+
+
+def run_runners_cli(argv: Optional[List[str]] = None) -> int:
+    """Entry point for 'repo360 runners' subcommand."""
+    parser = argparse.ArgumentParser(
+        prog="repo360 runners",
+        description="Inspect Actions self-hosted runner fleet usage, compute hours, and queue wait times.",
+    )
+    parser.add_argument(
+        "--repos",
+        default="repos.csv",
+        help="Path to repository inventory CSV (default: repos.csv).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="./repo360-output",
+        help="Target directory for generated workbooks and data feeds (default: ./repo360-output).",
+    )
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=90,
+        help="Lookback analysis window in days (default: 90).",
+    )
+    parser.add_argument(
+        "--max-runs",
+        type=int,
+        default=50,
+        help="Maximum completed workflow runs to inspect per repository (default: 50).",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=6,
+        help="Concurrent repository worker threads (default: 6).",
+    )
+    parser.add_argument(
+        "--config",
+        default="",
+        help="Optional path to custom JSON configuration file.",
+    )
+
+    args = parser.parse_args(argv)
+    start_time = time.time()
+
+    # 1. Resolve Credentials
+    creds = resolve_runtime_credentials()
+    app_id = creds.get("app_id")
+    private_key = creds.get("private_key")
+    api_base_url = creds.get("api_base_url", "https://api.github.com")
+
+    if not app_id or not private_key:
+        print("\n\033[91m[FAIL] Missing GitHub App credentials.\033[0m")
+        print("Run 'repo360 setup' or configure REPO360_APP_ID and REPO360_APP_PRIVATE_KEY.\n")
+        return 1
+
+    # 2. Parse Repository Inventory
+    repos_path = os.path.abspath(args.repos)
+    if not os.path.isfile(repos_path):
+        print(f"\n\033[91m[FAIL] Repository inventory file not found: {repos_path}\033[0m")
+        print("Create a repos.csv with 'org,repo,enabled' or specify --repos <path>.\n")
+        return 1
+
+    try:
+        entries = load_flexible_repo_entries(repos_path)
+    except Exception as exc:
+        print(f"\n\033[91m[FAIL] Invalid inventory CSV: {exc}\033[0m\n")
+        return 1
+
+    cfg = RunnersConfig(
+        lookback_days=args.lookback_days,
+        max_runner_runs_per_repo=args.max_runs,
+        max_workers=args.max_workers,
+        output_dir=args.output_dir,
+    )
+
+    auth = GitHubAppAuth(
+        app_id=app_id,
+        private_key=private_key,
+        api_base_url=api_base_url,
+    )
+    client = ResilientGitHubClient(auth=auth)
+
+    end = datetime.now(timezone.utc)
+    since = end - timedelta(days=cfg.lookback_days)
+    stamp = end.strftime("%Y%m%d_%H%M%S")
+
+    print(f"\033[96m[INFO]\033[0m Resolving target repositories from {repos_path}...")
+    act_cfg = ActivityConfig(lookback_days=cfg.lookback_days, include_archived=False)
+    targets, failures, metadata_cache = resolve_activity_targets(client, entries, act_cfg)
+    if not targets:
+        print("\033[91m[FAIL] No repositories discovered or accessible to analyze.\033[0m\n")
+        return 1
+
+    orgs = sorted({org for org, _ in targets}, key=str.lower)
+    print(f"\033[96m[INFO]\033[0m Inspecting Actions runner fleet across {len(orgs)} organization(s)...")
+
+    runners, runner_metrics, org_runner_metrics = collect_runners_and_metrics(
+        client, orgs, targets, since, end, cfg, failures, metadata_cache
+    )
+    runner_rows, org_runner_rows = build_runner_rows(runners, runner_metrics, org_runner_metrics, orgs)
+
+    out_dir = Path(cfg.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    xlsx_path = out_dir / f"{cfg.file_prefix}_{stamp}.xlsx"
+    csv_path = out_dir / f"{cfg.file_prefix}_{stamp}.csv"
+
+    elapsed = time.time() - start_time
+    write_runners_workbook(
+        xlsx_path,
+        cfg,
+        since,
+        end,
+        runner_rows,
+        org_runner_rows,
+        failures,
+        execution_duration=elapsed,
+    )
+    write_runners_csv(csv_path, RUNNER_HEADERS, runner_rows)
+
+    print_runners_scorecard(
+        runner_rows=runner_rows,
+        org_runner_rows=org_runner_rows,
+        xlsx_path=xlsx_path,
+        csv_path=csv_path,
+        elapsed_seconds=elapsed,
+    )
+    return 0
