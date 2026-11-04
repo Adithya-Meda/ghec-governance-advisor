@@ -217,13 +217,20 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
     for strategy_name, cmd in candidates:
         logger.debug("Executing upgrade via %s: %s", strategy_name, " ".join(cmd))
         try:
-            result = subprocess.run(cmd, check=False)
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
             if result.returncode == 0:
                 success = True
                 break
-            last_error = f"Strategy '{strategy_name}' exited with code {result.returncode}"
+            err_lines = [line.strip() for line in (result.stderr or result.stdout or "").splitlines() if line.strip()]
+            last_error = err_lines[-1] if err_lines else f"Exited with code {result.returncode}"
         except Exception as exc:
-            last_error = f"Strategy '{strategy_name}' execution failed: {exc}"
+            last_error = str(exc)
 
     _restore_windows_binaries(renamed, success=success)
 
@@ -298,14 +305,12 @@ def run_upgrade_cli(argv: Optional[List[str]] = None) -> int:
         return 0
 
     candidates = get_upgrade_commands(args.source, installer_override)
-    print(f"\033[96m[INFO]\033[0m Upgrading Repo360 to the latest version...")
+    print("\033[96m[INFO]\033[0m Upgrading Repo360 to the latest version...")
 
     exit_code = execute_upgrade(candidates, dry_run=args.dry_run)
     if exit_code == 0 and not args.dry_run:
-        print("\n\033[92m[SUCCESS]\033[0m Repo360 upgrade completed successfully.")
-        verify_local_state()
-        print("\nRun 'repo360 --help' to explore updated features.\n")
+        print("\033[92m[SUCCESS]\033[0m Repo360 upgraded successfully.")
     elif exit_code != 0:
-        print(f"\n\033[91m[FAIL]\033[0m Upgrade failed with exit code {exit_code}.\n")
+        print(f"\033[91m[FAIL]\033[0m Upgrade failed with exit code {exit_code}.\n")
 
     return exit_code
