@@ -8,7 +8,7 @@ Uses GitHub's official App Manifest flow:
 5. Automatically saves the RSA private key (.pem) to user config (~/.ghec-advisor/secrets/)
 6. Opens GitHub App installation page and automatically fetches Installation ID
 7. Prompts user to select AI Remediation Provider and enter API key
-8. Persists all credentials to ~/.ghec-advisor/config.json (Zero .env or repos.csv required!)
+8. Persists all credentials securely to ~/.ghec-advisor/config.json (Zero manual setup required!)
 """
 
 from __future__ import annotations

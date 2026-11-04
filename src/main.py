@@ -194,6 +194,44 @@ def print_terminal_scorecard(
     print(f"{G}{B}   [SUCCESS] Audit completed successfully across {len(targets)} {repo_noun}{time_suffix}.{X}\n")
 
 
+def _log_repo_banner(
+    idx: int,
+    total: int,
+    target: RepoTarget,
+    tech_stack: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log an executive progress banner indicating the repository currently being evaluated."""
+    pct = int((idx / total) * 100) if total > 0 else 100
+    bar_length = 15
+    filled_len = int(bar_length * idx // total) if total > 0 else bar_length
+    bar = "=" * (filled_len - 1) + ">" if (0 < filled_len < bar_length) else ("=" * filled_len)
+    bar = bar.ljust(bar_length, " ")
+
+    stack_str = ""
+    if tech_stack:
+        langs = tech_stack.get("languages", [])
+        if langs:
+            stack_str = f" | Stack: {', '.join(langs[:3])}"
+
+    C = "\033[96m"   # Cyan
+    B = "\033[1m"    # Bold
+    Y = "\033[93m"   # Yellow
+    W = "\033[97m"   # Bright White
+    D = "\033[2m"    # Dim
+    X = "\033[0m"    # Reset
+
+    pad = len(str(total))
+    pct_badge = f"{B}{Y}[{pct:3d}% | {idx:>{pad}}/{total}]{X}"
+    bar_badge = f"{C}[{bar}]{X}"
+    repo_title = f"{B}{W}{target.org_name}/{target.repo_name}{X}"
+    branch_info = f"{D}(branch: {target.default_branch}{stack_str}){X}"
+
+    separator = f"{D}{'-' * 74}{X}"
+    logger.info(separator)
+    logger.info("%s %s Auditing Repository: %s %s", pct_badge, bar_badge, repo_title, branch_info)
+    logger.info(separator)
+
+
 def run_audit(
     inspector: RepoInspector,
     targets: List[RepoTarget],
@@ -208,7 +246,11 @@ def run_audit(
     # 1. Evaluate Organization-Level Checks (once per unique org)
     unique_orgs = sorted({target.org_name for target in targets})
     for org in unique_orgs:
-        logger.info("\033[1;96mAuditing Organization:\033[0m \033[1;97m%s\033[0m", org)
+        D = "\033[2m"
+        X = "\033[0m"
+        logger.info(f"{D}{'-' * 74}{X}")
+        logger.info("\033[1;96mAuditing Organization:\033[0m \033[1;97m%s\033[0m (Organization-Wide Governance)", org)
+        logger.info(f"{D}{'-' * 74}{X}")
         for check_cls in ALL_ORG_CHECKS:
             check_instance = check_cls()
             if check_instance.is_enabled(enabled_checks):
@@ -220,18 +262,15 @@ def run_audit(
                     logger.warning("Check %s failed on org %s: %s", check_instance.check_id, org, err)
 
     # 2. Evaluate Repository & Contributor Checks
-    for target in targets:
-        logger.info(
-            "\033[1;96mAuditing Repository:\033[0m \033[1;97m%s/%s\033[0m \033[2m(branch: %s)\033[0m",
-            target.org_name,
-            target.repo_name,
-            target.default_branch,
-        )
+    total_repos = len(targets)
+    for idx, target in enumerate(targets, start=1):
         tech_stack: Dict[str, Any] = {}
         if ai_engine and ai_engine.is_available():
             tech_stack = inspector.detect_tech_stack(
                 target.org_name, target.repo_name, target.default_branch
             )
+
+        _log_repo_banner(idx, total_repos, target, tech_stack)
 
         # Evaluate Repo Admin Checks
         if "all" in target.target_personas or "repo_admin" in target.target_personas:
@@ -468,8 +507,29 @@ def _run_cli() -> int:
                 RepoTarget(org_name="fintech-core", repo_name="auth-service", target_personas={"all"}),
             ]
         results = create_mock_results(targets)
+
+        # 1. Organization-Wide Governance findings
+        D = "\033[2m"
+        X = "\033[0m"
+        logger.info(f"{D}{'-' * 74}{X}")
+        logger.info("\033[1;96mAuditing Organization:\033[0m \033[1;97mfintech-core\033[0m (Organization-Wide Governance)")
+        logger.info(f"{D}{'-' * 74}{X}")
         for res in results:
-            _log_finding(res)
+            if res.repo_name == "[Organization-Wide]":
+                _log_finding(res)
+
+        # 2. Repository findings with progress banner
+        mock_stacks = [
+            {"languages": ["Python", "Docker"]},
+            {"languages": ["TypeScript", "Node.js"]},
+        ]
+        total_targets = len(targets)
+        for idx, target in enumerate(targets, start=1):
+            stack = mock_stacks[(idx - 1) % len(mock_stacks)]
+            _log_repo_banner(idx, total_targets, target, stack)
+            for res in results:
+                if res.repo_name == target.repo_name:
+                    _log_finding(res)
     else:
         # Load credentials resolved across Environment / Local .env / User Config
         app_id = creds["app_id"]
