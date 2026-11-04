@@ -119,8 +119,9 @@ def test_enrich_remediation_success(mock_client_cls: MagicMock) -> None:
 
     engine.enrich_remediation(result, tech_stack)
     assert result.extra_details.get("ai_enriched") is True
-    assert "# [AI Tailored for Python]" in result.remediation_snippet_after
     assert "Custom Copilot Instructions" in result.remediation_snippet_after
+    assert "# [AI Tailored" not in result.remediation_snippet_after
+    assert "# ADVISORY ONLY:" not in result.remediation_snippet_after
 
 
 def test_enrich_remediation_skips_passing_or_unsupported() -> None:

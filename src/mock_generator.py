@@ -104,7 +104,7 @@ def create_mock_results(targets: List[RepoTarget]) -> List[CheckResult]:
                 recommended_state="Provide a .devcontainer configuration for reproducible local and Codespaces development.",
                 explanation="Junior developers frequently lose hours debugging local toolchains (Node/Python/Docker versions); DevContainers eliminate 'works on my machine' drift.",
                 remediation_snippet_before="[No devcontainer setup - manual developer machine installation required]",
-                remediation_snippet_after="# [AI Tailored for Python 3.12, Docker]\n# ADVISORY ONLY: Review, test, and validate in non-production environments before applying.\n{\n  \"name\": \"Service Dev Container\",\n  \"image\": \"mcr.microsoft.com/devcontainers/python:3.12\"\n}",
+                remediation_snippet_after="{\n  \"name\": \"Service Dev Container\",\n  \"image\": \"mcr.microsoft.com/devcontainers/python:3.12\"\n}",
                 documentation_url="https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers",
                 extra_details={
                     "ai_enriched": True,

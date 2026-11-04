@@ -164,25 +164,50 @@ class ExcelReporter(BaseReporter):
 
         if executive_summary:
             active_model = model_name or self.infer_ai_model(results, "Gemini")
-            ws.cell(
+
+            # 1. Wide Header Banner
+            header_cell = ws.cell(
                 row=15,
                 column=2,
                 value=f"AI Executive Risk & Governance Narrative (Synthesized via {active_model})",
-            ).font = self.font_header
-            ws.cell(row=15, column=2).fill = self.fill_ai_header
-            ws.merge_cells("B15:E15")
+            )
+            header_cell.font = self.font_header
+            header_cell.fill = self.fill_ai_header
+            header_cell.alignment = Alignment(horizontal="left", vertical="center")
+            ws.merge_cells("B15:N15")
+            ws.row_dimensions[15].height = 26
+            for c in range(2, 15):
+                ws.cell(row=15, column=c).fill = self.fill_ai_header
+                ws.cell(row=15, column=c).border = self.border_cell
 
-            c_narrative = ws.cell(row=16, column=2, value=executive_summary)
+            # 2. Dynamic height calculation to ensure full direct visibility without clipping
+            lines = executive_summary.splitlines()
+            visual_lines = 0
+            for l in lines:
+                l_str = l.strip()
+                if not l_str:
+                    visual_lines += 1
+                else:
+                    visual_lines += max(1, (len(l_str) + 125) // 126)
+
+            needed_rows = max(18, visual_lines + 2)
+            narrative_start_row = 16
+            narrative_end_row = narrative_start_row + needed_rows - 1
+
+            c_narrative = ws.cell(row=narrative_start_row, column=2, value=executive_summary)
             c_narrative.font = self.font_data
             c_narrative.alignment = Alignment(wrap_text=True, vertical="top")
-            ws.merge_cells("B16:E24")
+            ws.merge_cells(f"B{narrative_start_row}:N{narrative_end_row}")
 
-            # Border around narrative
-            for r in range(15, 25):
-                for c in range(2, 6):
+            for r in range(narrative_start_row, narrative_end_row + 1):
+                ws.row_dimensions[r].height = 18
+                for c in range(2, 15):
                     ws.cell(row=r, column=c).border = self.border_cell
 
-        notice_row = 26 if executive_summary else 15
+            notice_row = narrative_end_row + 2
+        else:
+            notice_row = 15
+
         c_notice = ws.cell(
             row=notice_row,
             column=2,
@@ -190,10 +215,15 @@ class ExcelReporter(BaseReporter):
         )
         c_notice.font = self.font_italic
         c_notice.alignment = Alignment(wrap_text=True, vertical="center")
-        ws.merge_cells(f"B{notice_row}:E{notice_row}")
-        ws.row_dimensions[notice_row].height = 22
+        ws.merge_cells(f"B{notice_row}:N{notice_row}")
+        ws.row_dimensions[notice_row].height = 24
 
         self._auto_adjust_columns(ws)
+
+        # Ensure summary narrative columns have generous width matching the wide executive banner
+        for col_char in ("D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"):
+            if ws.column_dimensions[col_char].width < 13:
+                ws.column_dimensions[col_char].width = 13
 
     def _build_ai_recommendations_sheet(self, ws, results: List[CheckResult]) -> None:
         """Build dedicated worksheet spotlighting all AI-synthesized remediations."""
