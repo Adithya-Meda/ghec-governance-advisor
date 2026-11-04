@@ -33,7 +33,7 @@ No cloning, `.env`, or manual configuration files required.
 
 #### 1. Install (or Upgrade)
 ```bash
-pipx install --force git+https://github.com/Adithya-Meda/ghec-governance-advisor.git
+pipx install --force git+https://github.com/Adithya-Meda/repo360.git
 ```
 
 #### 2. Setup (One-Time)
@@ -80,7 +80,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: Adithya-Meda/ghec-governance-advisor@v1
+      - uses: Adithya-Meda/repo360@v1
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}

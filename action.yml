@@ -1,6 +1,6 @@
-name: "GH Governance Advisor"
-description: "Audits GitHub Enterprise organizations and repositories against security, governance, and CI/CD best practices."
-author: "GHEC Platform Engineering Team"
+name: "Repo360"
+description: "360-Degree Platform Governance, Compliance, and Engineering Intelligence for GitHub Organizations."
+author: "Repo360 Engineering Team"
 
 inputs:
   app_id:
@@ -58,15 +58,19 @@ runs:
       with:
         python-version: "3.12"
 
-    - name: "Install Governance Advisor"
+    - name: "Install Repo360"
       shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install "${{ github.action_path }}"
 
-    - name: "Execute Governance Audit"
+    - name: "Execute Repo360 Audit"
       shell: bash
       env:
+        REPO360_APP_ID: ${{ inputs.app_id }}
+        REPO360_APP_PRIVATE_KEY: ${{ inputs.private_key }}
+        REPO360_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
+        REPO360_API_BASE_URL: ${{ inputs.api_base_url }}
         GHEC_APP_ID: ${{ inputs.app_id }}
         GHEC_APP_PRIVATE_KEY: ${{ inputs.private_key }}
         GHEC_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
@@ -77,7 +81,7 @@ runs:
         LLM_PROVIDER: ${{ inputs.llm_provider }}
         LLM_MODEL: ${{ inputs.llm_model }}
       run: |
-        CMD="ghec-advisor --output-dir ${{ inputs.output_dir }}"
+        CMD="repo360 --output-dir ${{ inputs.output_dir }}"
         if [ -n "${{ inputs.advisory_config }}" ]; then
           CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
         fi
