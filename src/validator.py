@@ -7,7 +7,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 VALID_PERSONAS = {"org_admin", "repo_admin", "contributor", "all"}
 
@@ -251,6 +251,15 @@ class ConfigValidator:
                     if not org or not repo:
                         raise ValueError(
                             f"Line {line_no} in {file_path}: 'org_name' and 'repo_name' cannot be empty."
+                        )
+
+                    if "/" in org or "\\" in org or ".." in org:
+                        raise ValueError(
+                            f"Line {line_no} in {file_path}: Invalid org_name '{org}'. Path separators and '..' are prohibited."
+                        )
+                    if "/" in repo or "\\" in repo or ".." in repo:
+                        raise ValueError(
+                            f"Line {line_no} in {file_path}: Invalid repo_name '{repo}'. Path separators and '..' are prohibited."
                         )
 
                     unique_key = f"{org.lower()}/{repo.lower()}"

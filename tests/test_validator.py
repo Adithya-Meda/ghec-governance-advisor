@@ -114,3 +114,28 @@ def test_validate_repos_csv_optional_missing() -> None:
     """Verify that optional=True returns empty list when file does not exist."""
     targets = ConfigValidator.load_and_validate_repos_csv("non_existent_repos.csv", optional=True)
     assert targets == []
+
+
+def test_validate_repos_csv_path_traversal() -> None:
+    """Ensure path traversal payloads in org_name or repo_name are rejected."""
+    traversal_csv = "org_name,repo_name\n../../evil,valid-repo\n"
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv", encoding="utf-8") as f:
+        f.write(traversal_csv)
+        temp_path = f.name
+    try:
+        with pytest.raises(ValueError, match=r"Path separators and '\.\.' are prohibited"):
+            ConfigValidator.load_and_validate_repos_csv(temp_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    traversal_repo_csv = "org_name,repo_name\nvalid-org,../secret\n"
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv", encoding="utf-8") as f:
+        f.write(traversal_repo_csv)
+        temp_path2 = f.name
+    try:
+        with pytest.raises(ValueError, match=r"Path separators and '\.\.' are prohibited"):
+            ConfigValidator.load_and_validate_repos_csv(temp_path2)
+    finally:
+        if os.path.exists(temp_path2):
+            os.remove(temp_path2)

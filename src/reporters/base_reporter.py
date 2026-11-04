@@ -23,6 +23,16 @@ class BaseReporter(ABC):
         pass
 
     @staticmethod
+    def sanitize_spreadsheet_value(value: object) -> object:
+        """Sanitize values against CSV / Excel Formula Injection (CWE-1236).
+
+        Prepends a single quote if the string begins with =, +, -, @, tab, or carriage return.
+        """
+        if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+            return f"'{value}"
+        return value
+
+    @staticmethod
     def infer_ai_model(results: List[CheckResult], fallback: str = "Gemini") -> str:
         """Extract the active AI model name from audit findings."""
         for r in results:

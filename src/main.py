@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from .ai import AIEngine
 from .auth.github_app_auth import GitHubAppAuth
@@ -22,9 +22,7 @@ from .checks import (
     ALL_ORG_CHECKS,
     ALL_REPO_CHECKS,
     CheckResult,
-    CheckSeverity,
     CheckStatus,
-    Persona,
 )
 from .collector.client import Repo360Client
 from .collector.repo_inspector import RepoInspector
@@ -156,7 +154,6 @@ def print_terminal_scorecard(
     R = "\033[91m"  # Red
     C = "\033[96m"  # Cyan
     B = "\033[1m"   # Bold
-    D = "\033[2m"   # Dim
     X = "\033[0m"   # Reset
 
     score_color = G if health_score >= 80 else (Y if health_score >= 60 else R)
@@ -533,7 +530,7 @@ def _run_cli() -> int:
     os.makedirs(output_dir, exist_ok=True)
 
     # Load credentials with priority: Environment Variables > Local .env > User Config (~/.repo360/config.json)
-    from .credentials import resolve_runtime_credentials, save_user_credentials
+    from .credentials import resolve_runtime_credentials
     creds = resolve_runtime_credentials()
 
     # Initialize AI Engine (Multi-provider: Gemini, OpenAI, Anthropic)

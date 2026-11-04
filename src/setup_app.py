@@ -28,7 +28,6 @@ import requests
 
 from .auth.github_app_auth import GitHubAppAuth
 from .credentials import (
-    get_credentials_path,
     save_private_key,
     save_user_credentials,
 )
@@ -72,7 +71,7 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
     api_domain: str = "https://api.github.com"
     conversion_result: dict | None = None
 
-    def log_message(self, format: str, *args) -> None:
+    def log_message(self, fmt: str, *args) -> None:
         """Suppress standard HTTP server access logs."""
         pass
 

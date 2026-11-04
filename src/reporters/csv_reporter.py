@@ -61,28 +61,27 @@ class CSVReporter(BaseReporter):
                 target_file = self.infer_target_file(r.check_id)
                 remediation_code = r.remediation_snippet_after or r.recommended_state
 
-                writer.writerow(
-                    [
-                        r.org_name,
-                        r.repo_name,
-                        r.persona.value,
-                        r.category,
-                        r.check_id,
-                        r.check_name,
-                        r.status.value,
-                        r.severity.value,
-                        rec_source,
-                        ai_enriched_str,
-                        detected_stack,
-                        target_file,
-                        r.current_state,
-                        r.recommended_state,
-                        remediation_code,
-                        r.explanation,
-                        r.remediation_command,
-                        r.documentation_url,
-                        safety_notice,
-                    ]
-                )
+                row_data = [
+                    r.org_name,
+                    r.repo_name,
+                    r.persona.value,
+                    r.category,
+                    r.check_id,
+                    r.check_name,
+                    r.status.value,
+                    r.severity.value,
+                    rec_source,
+                    ai_enriched_str,
+                    detected_stack,
+                    target_file,
+                    r.current_state,
+                    r.recommended_state,
+                    remediation_code,
+                    r.explanation,
+                    r.remediation_command,
+                    r.documentation_url,
+                    safety_notice,
+                ]
+                writer.writerow([self.sanitize_spreadsheet_value(val) for val in row_data])
 
         return output_path

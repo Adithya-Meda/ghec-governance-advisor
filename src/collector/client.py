@@ -189,6 +189,7 @@ class Repo360Client:
         target_org = org or self._extract_org_from_path(url)
 
         for attempt in range(1, self.max_retries + 1):
+            response: Optional[requests.Response] = None
             headers = self.auth.get_auth_headers(installation_id=installation_id, org=target_org)
             try:
                 response = self.session.get(

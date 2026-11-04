@@ -142,3 +142,56 @@ def test_html_reporter_generation(mock_results: list) -> None:
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def test_formula_injection_defense() -> None:
+    """Verify spreadsheet formula injection (CWE-1236) elements are neutralized with single quotes."""
+    from src.checks.base import CheckResult, CheckStatus, CheckSeverity, Persona
+
+    injected_result = CheckResult(
+        check_id="test_injection",
+        check_name="=1+1",
+        persona=Persona.REPO_ADMIN,
+        category="+Security",
+        status=CheckStatus.FAIL,
+        severity=CheckSeverity.HIGH,
+        current_state="-old",
+        recommended_state="@calc",
+        explanation="=cmd|'/C calc'!A0",
+        remediation_command="-rm -rf /",
+        documentation_url="https://example.com",
+        org_name="=MALICIOUS_ORG",
+        repo_name="@malicious_repo",
+    )
+
+    # Test CSV
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv", encoding="utf-8") as f:
+        csv_path = f.name
+    try:
+        CSVReporter().generate([injected_result], csv_path)
+        with open(csv_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert "'=MALICIOUS_ORG" in content
+        assert "'@malicious_repo" in content
+        assert "'+Security" in content
+        assert "'-old" in content
+        assert "'@calc" in content
+        assert "'=cmd|'/C calc'!A0" in content
+    finally:
+        if os.path.exists(csv_path):
+            os.remove(csv_path)
+
+    # Test Excel
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f:
+        xlsx_path = f.name
+    try:
+        ExcelReporter().generate([injected_result], xlsx_path)
+        wb = openpyxl.load_workbook(xlsx_path)
+        ws = wb["Repo_Admin_Findings"]
+        row2 = [cell.value for cell in ws[2]]
+        assert "'=MALICIOUS_ORG" in row2
+        assert "'@malicious_repo" in row2
+        assert "'+Security" in row2
+    finally:
+        if os.path.exists(xlsx_path):
+            os.remove(xlsx_path)

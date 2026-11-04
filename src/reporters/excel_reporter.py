@@ -166,7 +166,7 @@ class ExcelReporter(BaseReporter):
             ws.cell(
                 row=15,
                 column=2,
-                value=f"🤖 AI Executive Risk & Governance Narrative (Synthesized via {active_model})",
+                value=f"AI Executive Risk & Governance Narrative (Synthesized via {active_model})",
             ).font = self.font_header
             ws.cell(row=15, column=2).fill = self.fill_ai_header
             ws.merge_cells("B15:E15")
@@ -185,7 +185,7 @@ class ExcelReporter(BaseReporter):
         c_notice = ws.cell(
             row=notice_row,
             column=2,
-            value="⚠️ AI Safety Notice: All AI-synthesized remediation snippets and summaries are advisory only. Review and validate in non-production environments before deployment.",
+            value="AI Safety Notice: All AI-synthesized remediation snippets and summaries are advisory only. Review and validate in non-production environments before deployment.",
         )
         c_notice.font = self.font_italic
         c_notice.alignment = Alignment(wrap_text=True, vertical="center")
@@ -247,24 +247,24 @@ class ExcelReporter(BaseReporter):
             for row_idx, f in enumerate(ai_findings, start=2):
                 stack = f.extra_details.get("detected_stack") or ("Detected Framework" if not is_fallback else "General Platform")
                 model_name = f.extra_details.get("ai_model") or ("gemini-3.5-flash" if not is_fallback else "Deterministic Policy Engine")
-                source_label = f"🤖 AI Tailored ({model_name})" if not is_fallback else "Standard Policy (Offline Fallback)"
+                source_label = f"AI Tailored ({model_name})" if not is_fallback else "Standard Policy (Offline Fallback)"
                 target_file = self.infer_target_file(f.check_id)
                 remediation_code = f.remediation_snippet_after or f.recommended_state
 
                 values = [
-                    f.repo_name,
-                    f.category,
-                    f.check_name,
+                    self.sanitize_spreadsheet_value(f.repo_name),
+                    self.sanitize_spreadsheet_value(f.category),
+                    self.sanitize_spreadsheet_value(f.check_name),
                     f.severity.value,
                     f.status.value,
-                    stack,
-                    model_name,
-                    source_label,
-                    target_file,
-                    remediation_code,
-                    f.remediation_command,
-                    f.explanation,
-                    f.documentation_url,
+                    self.sanitize_spreadsheet_value(stack),
+                    self.sanitize_spreadsheet_value(model_name),
+                    self.sanitize_spreadsheet_value(source_label),
+                    self.sanitize_spreadsheet_value(target_file),
+                    self.sanitize_spreadsheet_value(remediation_code),
+                    self.sanitize_spreadsheet_value(f.remediation_command),
+                    self.sanitize_spreadsheet_value(f.explanation),
+                    self.sanitize_spreadsheet_value(f.documentation_url),
                 ]
 
                 for col_idx, val in enumerate(values, start=1):
@@ -286,7 +286,7 @@ class ExcelReporter(BaseReporter):
         c_safe = ws.cell(
             row=safety_row,
             column=1,
-            value="⚠️ AI Safety Notice: AI-synthesized remediation snippets and configuration files are advisory only. Validate in a lower environment prior to production merge.",
+            value="AI Safety Notice: AI-synthesized remediation snippets and configuration files are advisory only. Validate in a lower environment prior to production merge.",
         )
         c_safe.font = self.font_italic
         c_safe.alignment = Alignment(vertical="center")
@@ -324,17 +324,17 @@ class ExcelReporter(BaseReporter):
             target_file = self.infer_target_file(f.check_id)
 
             values = [
-                f.org_name,
-                f.repo_name,
-                f.category,
-                f.check_name,
+                self.sanitize_spreadsheet_value(f.org_name),
+                self.sanitize_spreadsheet_value(f.repo_name),
+                self.sanitize_spreadsheet_value(f.category),
+                self.sanitize_spreadsheet_value(f.check_name),
                 f.status.value,
                 f.severity.value,
-                target_file,
-                f.current_state,
-                f.recommended_state,
-                f.explanation,
-                f.documentation_url,
+                self.sanitize_spreadsheet_value(target_file),
+                self.sanitize_spreadsheet_value(f.current_state),
+                self.sanitize_spreadsheet_value(f.recommended_state),
+                self.sanitize_spreadsheet_value(f.explanation),
+                self.sanitize_spreadsheet_value(f.documentation_url),
             ]
             for col_idx, val in enumerate(values, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)

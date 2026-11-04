@@ -8,7 +8,7 @@ import time
 from typing import List
 
 from .base_reporter import BaseReporter
-from ..checks.base import CheckResult, CheckStatus, CheckSeverity, Persona
+from ..checks.base import CheckResult, CheckStatus
 
 
 class HTMLReporter(BaseReporter):
@@ -45,7 +45,7 @@ class HTMLReporter(BaseReporter):
         if executive_summary:
             ai_briefing_block = f"""
             <div class="ai-briefing">
-              <span class="ai-badge">🤖 AI Executive Risk Briefing ({html.escape(active_model)})</span>
+              <span class="ai-badge">AI Executive Risk Briefing ({html.escape(active_model)})</span>
               <div class="ai-briefing-text">{html.escape(executive_summary)}</div>
             </div>
             """
@@ -397,7 +397,7 @@ class HTMLReporter(BaseReporter):
     {ai_briefing_block}
 
     <div class="ai-safety-warning">
-      <strong>⚠️ AI Safety & Advisory Notice:</strong> AI-synthesized remediation snippets, configuration files, and executive summaries are advisory only. Code configurations and policies must be reviewed, tested, and validated in non-production environments by repository maintainers prior to applying to production systems.
+      <strong>AI Safety & Advisory Notice:</strong> AI-synthesized remediation snippets, configuration files, and executive summaries are advisory only. Code configurations and policies must be reviewed, tested, and validated in non-production environments by repository maintainers prior to applying to production systems.
     </div>
 
     <div class="controls">
@@ -415,7 +415,7 @@ class HTMLReporter(BaseReporter):
       </div>
       <div class="btn-group">
         <button class="tab-btn active" onclick="filterSource('all')">All Sources</button>
-        <button class="tab-btn ai-tab-btn" onclick="filterSource('ai')">🤖 AI Tailored Only ({ai_count})</button>
+        <button class="tab-btn ai-tab-btn" onclick="filterSource('ai')">AI Tailored Only ({ai_count})</button>
         <button class="tab-btn" onclick="filterSource('standard')">Standard Rules Only</button>
       </div>
     </div>
@@ -499,7 +499,7 @@ class HTMLReporter(BaseReporter):
 
         source_badge = ""
         if is_ai:
-            source_badge = f"""<span class="badge badge-ai">🤖 AI Tailored ({html.escape(stack_label)})</span>"""
+            source_badge = f"""<span class="badge badge-ai">AI Tailored ({html.escape(stack_label)})</span>"""
         else:
             source_badge = """<span class="badge badge-standard">Standard Policy</span>"""
 
