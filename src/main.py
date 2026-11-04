@@ -124,11 +124,25 @@ def _log_finding(res: CheckResult) -> None:
         logger.info("%s %s %s %s(Skipped - %s)%s", badge, target, res.check_name, dim, res.current_state, reset)
 
 
+def _print_failure_banner(reason: str) -> None:
+    """Print a standardized color-coded execution failure announcement."""
+    R = "\033[91m"
+    B = "\033[1m"
+    X = "\033[0m"
+    print(f"\n{R}{'=' * 76}{X}")
+    print(f"{B}{R}   AUDIT FAILED / EXECUTION TERMINATED{X}")
+    print(f"{R}{'=' * 76}{X}")
+    for line in reason.strip().splitlines():
+        print(f"   {line}")
+    print(f"{R}{'=' * 76}{X}\n")
+
+
 def print_terminal_scorecard(
     results: List[CheckResult],
     targets: List[RepoTarget],
     report_paths: Dict[str, str],
     ai_engine: Optional[AIEngine] = None,
+    elapsed_seconds: float = 0.0,
 ) -> None:
     """Print an executive color-coded scorecard to stdout."""
     total = len(results)
@@ -152,6 +166,12 @@ def print_terminal_scorecard(
         else f"{Y}OFFLINE (Deterministic Fallback){X}"
     )
 
+    elapsed_str = (
+        f"{int(elapsed_seconds // 60)}m {int(elapsed_seconds % 60)}s"
+        if elapsed_seconds >= 60
+        else f"{elapsed_seconds:.1f}s"
+    )
+
     print(f"\n{C}{'=' * 76}{X}")
     print(f"{B}{C}   GITHUB ENTERPRISE PLATFORM GOVERNANCE & ENABLEMENT SCORECARD{X}")
     print(f"{C}{'=' * 76}{X}")
@@ -162,11 +182,16 @@ def print_terminal_scorecard(
     print(f"   {B}Items Needing Review :{X} {Y}{warned:<4} REVIEW{X}")
     print(f"   {B}Overall Posture Score:{X} {score_color}{health_score:.1f}%{X}")
     print(f"   {B}AI Remediation Engine:{X} {ai_status}")
+    if elapsed_seconds > 0:
+        print(f"   {B}Execution Duration   :{X} {elapsed_str}")
     print(f"{C}{'-' * 76}{X}")
     print(f"   {B}Interactive Dashboard (HTML) :{X} {report_paths.get('html', '')}")
     print(f"   {B}Executive Workbook   (XLSX) :{X} {report_paths.get('xlsx', '')}")
     print(f"   {B}Flat SIEM Feed       (CSV)  :{X} {report_paths.get('csv', '')}")
-    print(f"{C}{'=' * 76}{X}\n")
+    print(f"{C}{'=' * 76}{X}")
+    repo_noun = "repository" if len(targets) == 1 else "repositories"
+    time_suffix = f" in {elapsed_str}" if elapsed_seconds > 0 else ""
+    print(f"{G}{B}   [SUCCESS] Audit completed successfully across {len(targets)} {repo_noun}{time_suffix}.{X}\n")
 
 
 def run_audit(
@@ -290,11 +315,13 @@ def main() -> int:
         return _run_cli()
     except KeyboardInterrupt:
         logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        _print_failure_banner("Audit cancelled by user (Ctrl+C). No final reports generated.")
         return 130
 
 
 def _run_cli() -> int:
     """CLI orchestrator."""
+    start_time = time.time()
     try:
         from dotenv import load_dotenv
 
@@ -366,6 +393,7 @@ def _run_cli() -> int:
         )
     except Exception as err:
         logger.error("Configuration validation failed: %s", err)
+        _print_failure_banner(f"Configuration validation failed: {err}")
         return 1
 
     # Determine output directory
@@ -413,6 +441,7 @@ def _run_cli() -> int:
             )
             if args.require_ai:
                 logger.error("Execution halted: --require-ai was specified but AI engine is offline (%s).", reason)
+                _print_failure_banner(f"--require-ai was specified but AI Remediation Engine is offline ({reason}).")
                 return 1
     elif not ai_engine.enabled:
         offline_reason = ai_engine.init_error or f"{key_hint} not configured"
@@ -425,6 +454,7 @@ def _run_cli() -> int:
         )
         if args.require_ai:
             logger.error("Execution halted: --require-ai was specified but %s is not configured.", key_hint)
+            _print_failure_banner(f"--require-ai was specified but {key_hint} is not configured.")
             return 1
 
     results: List[CheckResult] = []
@@ -452,6 +482,11 @@ def _run_cli() -> int:
                 "Missing required GitHub App credentials. Run 'ghec-setup' to automatically register "
                 "your GitHub App and download credentials, or set GHEC_APP_ID and GHEC_APP_PRIVATE_KEY."
             )
+            _print_failure_banner(
+                "Missing required GitHub App credentials.\n"
+                "  Action: Run 'ghec-setup' to automatically register your GitHub App and download credentials,\n"
+                "  or configure GHEC_APP_ID and GHEC_APP_PRIVATE_KEY."
+            )
             return 1
 
         try:
@@ -471,6 +506,10 @@ def _run_cli() -> int:
                         "No active installations found for GitHub App ID %s. "
                         "Ensure an Organization Owner has installed the App on your GitHub organization.",
                         app_id,
+                    )
+                    _print_failure_banner(
+                        f"No active installations found for GitHub App ID {app_id}.\n"
+                        "  Action: Ensure an Organization Owner has installed the App on your GitHub organization."
                     )
                     return 1
 
@@ -546,6 +585,7 @@ def _run_cli() -> int:
             results = run_audit(inspector, targets, advisory_config, ai_engine=ai_engine)
         except Exception as err:
             logger.error("Execution failed: %s", err)
+            _print_failure_banner(f"Audit execution error: {err}")
             return 1
 
     # Generate AI Executive Briefing if available
@@ -583,7 +623,8 @@ def _run_cli() -> int:
         "xlsx": os.path.abspath(xlsx_path),
         "csv": os.path.abspath(csv_path),
     }
-    print_terminal_scorecard(results, targets, report_paths, ai_engine=ai_engine)
+    elapsed = time.time() - start_time
+    print_terminal_scorecard(results, targets, report_paths, ai_engine=ai_engine, elapsed_seconds=elapsed)
 
     return 0
 
