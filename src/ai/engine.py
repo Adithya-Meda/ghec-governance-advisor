@@ -212,6 +212,7 @@ class AIEngine:
         url = f"{base_url.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
+            "api-key": self.api_key,
             "Content-Type": "application/json",
         }
         candidate_models = [self.model_name] + [
@@ -363,6 +364,7 @@ class AIEngine:
         url = f"{base_url.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
+            "api-key": self.api_key,
             "Content-Type": "application/json",
         }
         candidates = [self.model_name] + [

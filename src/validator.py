@@ -1,4 +1,4 @@
-"""Validation engine for repos.csv, config.json, and advisory.json."""
+"""Validation engine for inventory CSV, config JSON, and advisory policy files."""
 
 from __future__ import annotations
 
@@ -204,10 +204,10 @@ class ConfigValidator:
 
     @staticmethod
     def load_and_validate_repos_csv(file_path: str, optional: bool = True) -> List[RepoTarget]:
-        """Strictly parse and validate repository inventory from repos.csv.
+        """Strictly parse and validate repository inventory from CSV.
 
         Args:
-            file_path: Path to repos.csv.
+            file_path: Path to inventory CSV file.
             optional: If True, returns empty list when file is missing or empty.
 
         Returns:
@@ -234,7 +234,7 @@ class ConfigValidator:
                     if optional and not present_cols:
                         return []
                     raise ValueError(
-                        f"repos.csv is missing required columns: {', '.join(sorted(missing_cols))}"
+                        f"Inventory CSV is missing required columns: {', '.join(sorted(missing_cols))}"
                     )
 
                 for line_no, row in enumerate(reader, start=2):
