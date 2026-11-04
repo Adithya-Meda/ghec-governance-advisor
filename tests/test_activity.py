@@ -143,3 +143,30 @@ def test_write_activity_workbook_and_csv(tmp_path):
     assert xlsx_path.stat().st_size > 1000
     assert csv_path.is_file()
     assert "alice" in csv_path.read_text(encoding="utf-8")
+
+
+def test_format_error_permission_mapping():
+    from src.activity.collector import _format_error
+    import requests
+
+    resp_403 = requests.Response()
+    resp_403.status_code = 403
+    http_err_403 = requests.exceptions.HTTPError(response=resp_403)
+
+    msg_pulls = _format_error("Pulls", http_err_403)
+    assert "403 Forbidden" in msg_pulls
+    assert "pull_requests: read" in msg_pulls
+
+    msg_issues = _format_error("Issues", http_err_403)
+    assert "403 Forbidden" in msg_issues
+    assert "issues: read" in msg_issues
+
+    resp_404 = requests.Response()
+    resp_404.status_code = 404
+    http_err_404 = requests.exceptions.HTTPError(response=resp_404)
+    msg_404 = _format_error("Pulls", http_err_404)
+    assert "404 Not Found" in msg_404
+
+    generic_err = RuntimeError("Network timeout")
+    msg_generic = _format_error("Commits", generic_err)
+    assert "Commits: Network timeout" in msg_generic

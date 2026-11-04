@@ -179,6 +179,26 @@ def collect_pull_requests_graphql(
     return True
 
 
+def _format_error(prefix: str, exc: Exception) -> str:
+    """Format API exceptions into human-readable, actionable diagnostic strings."""
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code == 403:
+        perm_map = {
+            "Pulls": "pull_requests: read",
+            "PR Comments": "pull_requests: read",
+            "Issues": "issues: read",
+            "Issue Comments": "issues: read",
+            "Commits": "contents: read",
+        }
+        needed = perm_map.get(prefix)
+        if needed:
+            return f"{prefix}: 403 Forbidden (requires '{needed}' permission on GitHub App)"
+        return f"{prefix}: 403 Forbidden (insufficient GitHub App permissions)"
+    if status_code == 404:
+        return f"{prefix}: 404 Not Found (resource disabled or unavailable)"
+    return f"{prefix}: {exc}"
+
+
 def collect_repo_events(
     client: ResilientGitHubClient,
     org: str,
@@ -217,10 +237,11 @@ def collect_repo_events(
                 record(commit.get("author"), "commits", commit.get("commit", {}).get("author", {}).get("date"))
         except Exception as exc:
             if report:
-                report.errors.append(f"Commits: {exc}")
+                report.errors.append(_format_error("Commits", exc))
 
     # 2. Pull Requests
     has_prs = report is None or report.metadata.get("has_pull_requests", True)
+    prs_accessible = True
     if has_prs:
         pr_success = False
         try:
@@ -264,34 +285,38 @@ def collect_repo_events(
                     if report is not None and first_review and since <= first_review <= end:
                         report.review_hours.append((first_review - created).total_seconds() / 3600)
             except Exception as exc:
+                prs_accessible = False
                 if report:
-                    report.errors.append(f"Pulls: {exc}")
+                    report.errors.append(_format_error("Pulls", exc))
 
     # 3. Issues & Comments
     has_issues = report.metadata.get("has_issues", True) if report and report.metadata else True
+    issues_accessible = True
     if has_issues:
         try:
             for issue in client.paginate(org, f"{base}/issues", {"state": "all", **since_param}):
                 if "pull_request" not in issue:
                     record(issue.get("user"), "issues_opened", issue.get("created_at"))
         except Exception as exc:
+            issues_accessible = False
             if report:
-                report.errors.append(f"Issues: {exc}")
+                report.errors.append(_format_error("Issues", exc))
 
-        try:
-            for comment in client.paginate(org, f"{base}/issues/comments", since_param):
-                record(comment.get("user"), "issue_comments", comment.get("created_at"))
-        except Exception as exc:
-            if report:
-                report.errors.append(f"Issue Comments: {exc}")
+        if issues_accessible:
+            try:
+                for comment in client.paginate(org, f"{base}/issues/comments", since_param):
+                    record(comment.get("user"), "issue_comments", comment.get("created_at"))
+            except Exception as exc:
+                if report:
+                    report.errors.append(_format_error("Issue Comments", exc))
 
-    if has_prs:
+    if has_prs and prs_accessible:
         try:
             for comment in client.paginate(org, f"{base}/pulls/comments", since_param):
                 record(comment.get("user"), "review_comments", comment.get("created_at"))
         except Exception as exc:
             if report:
-                report.errors.append(f"PR Comments: {exc}")
+                report.errors.append(_format_error("PR Comments", exc))
 
     return dict(activity)
 

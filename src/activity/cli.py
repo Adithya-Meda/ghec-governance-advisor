@@ -207,6 +207,21 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     orgs = sorted({org for org, _ in targets}, key=str.lower)
     print(f"\033[96m[INFO]\033[0m Scanning {len(targets)} repositories across {len(orgs)} organization(s)...")
 
+    # Proactively verify required activity permissions across target organizations
+    for org_name in orgs:
+        perms = auth.get_installation_permissions(org_name)
+        missing_perms = []
+        if perms and perms.get("pull_requests") not in ("read", "write"):
+            missing_perms.append("pull_requests: read")
+        if perms and perms.get("issues") not in ("read", "write"):
+            missing_perms.append("issues: read")
+        if missing_perms:
+            print(
+                f"\033[93m[WARN]\033[0m GitHub App installation on '{org_name}' is missing: {', '.join(missing_perms)}.\n"
+                f"       PR and Issue events will be skipped until updated permissions are accepted in GitHub:\n"
+                f"       https://github.com/organizations/{org_name}/settings/installations"
+            )
+
     reports: Dict[Tuple[str, str], RepositoryReport] = {}
 
     with ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="activity-worker") as pool:

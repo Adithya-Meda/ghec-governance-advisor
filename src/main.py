@@ -374,6 +374,7 @@ Commands:
   setup       Launch 1-click GitHub App setup wizard & credential configuration
   activity    Analyze contributor cadence, active days, seat allocation, and commit/PR metrics
   runners     Inspect Actions self-hosted runner fleet usage, compute hours, and queue wait times
+  upgrade     Upgrade Repo360 CLI to the latest release or branch directly from GitHub
 
 Options:
   -h, --help  Show this help message or help for a specific command
@@ -433,6 +434,15 @@ def main() -> int:
             logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
             return 130
 
+    if subcmd in ("upgrade", "update"):
+        sys.argv.pop(1)
+        from .upgrade import run_upgrade_cli
+        try:
+            return run_upgrade_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nUpgrade cancelled by user (Ctrl+C). Exiting...")
+            return 130
+
     # 4. Unknown subcommand or misplaced option
     print(f"Error: Unknown command '{sys.argv[1]}'. Run 'repo360 --help' for available commands.\n")
     return 1
@@ -463,6 +473,16 @@ def run_runners_cli() -> int:
     from .runners.cli import run_runners_cli as _run_run
     try:
         return _run_run()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def run_upgrade_cli() -> int:
+    """Dedicated entrypoint for repo360 upgrade standalone execution."""
+    from .upgrade import run_upgrade_cli as _run_up
+    try:
+        return _run_up()
     except KeyboardInterrupt:
         logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
         return 130

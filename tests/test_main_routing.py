@@ -14,6 +14,7 @@ def test_print_root_help(capsys):
     assert "setup" in captured.out
     assert "activity" in captured.out
     assert "runners" in captured.out
+    assert "upgrade" in captured.out
 
 
 def test_main_bare_invocation(capsys):
@@ -46,6 +47,20 @@ def test_main_route_runners():
             ret = main()
             assert ret == 0
             assert mock_run.called
+
+
+def test_main_route_upgrade():
+    with patch.object(sys, "argv", ["repo360", "upgrade", "--dry-run"]):
+        with patch("src.upgrade.run_upgrade_cli", return_value=0) as mock_up:
+            ret = main()
+            assert ret == 0
+            assert mock_up.called
+
+    with patch.object(sys, "argv", ["repo360", "update", "--dry-run"]):
+        with patch("src.upgrade.run_upgrade_cli", return_value=0) as mock_up:
+            ret = main()
+            assert ret == 0
+            assert mock_up.called
 
 
 def test_main_unknown_command(capsys):

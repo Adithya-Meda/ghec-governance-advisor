@@ -197,3 +197,24 @@ def test_multi_org_uninstalled_org_raises_error(
     with pytest.raises(RuntimeError, match="No GitHub App installation found for organization 'NonExistentOrg'"):
         auth.get_installation_token(org="NonExistentOrg")
 
+
+@patch("requests.get")
+def test_get_installation_permissions(mock_get: MagicMock, test_rsa_key_pem: str) -> None:
+    """Verify retrieval of installation permissions dictionary."""
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = [
+        {
+            "id": 1001,
+            "account": {"login": "DefaultOrg24"},
+            "permissions": {"pull_requests": "read", "issues": "read", "contents": "read"},
+        },
+    ]
+    mock_get.return_value = mock_get_resp
+
+    auth = GitHubAppAuth(app_id=123, private_key=test_rsa_key_pem)
+    perms = auth.get_installation_permissions("DefaultOrg24")
+    assert perms.get("pull_requests") == "read"
+    assert perms.get("issues") == "read"
+    assert auth.get_installation_permissions("UnknownOrg") == {}
+

@@ -60,7 +60,6 @@ def get_manifest(github_domain: str, app_name: str = "Repo360") -> dict:
             "organization_administration": "read",
             "organization_self_hosted_runners": "read",
             "pull_requests": "read",
-            "secret_scanning_alerts": "read",
         },
         "public": False,
     }

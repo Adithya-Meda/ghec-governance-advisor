@@ -27,7 +27,6 @@ def test_get_manifest_payload() -> None:
     assert manifest["default_permissions"]["administration"] == "read"
     assert manifest["default_permissions"]["actions"] == "read"
     assert manifest["default_permissions"]["contents"] == "read"
-    assert manifest["default_permissions"]["secret_scanning_alerts"] == "read"
     assert manifest["default_permissions"]["pull_requests"] == "read"
     assert manifest["default_permissions"]["issues"] == "read"
     assert manifest["default_permissions"]["members"] == "read"

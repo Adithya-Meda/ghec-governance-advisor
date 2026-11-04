@@ -128,6 +128,16 @@ class GitHubAppAuth:
         self.discover_installations(force_refresh=True)
         return self._org_to_installation.get(target_org)
 
+    def get_installation_permissions(self, org: str) -> Dict[str, str]:
+        """Return the active permissions dictionary for an organization's installation."""
+        target = org.strip().lower()
+        installations = self.discover_installations()
+        for inst in installations:
+            login = inst.get("account", {}).get("login", "").lower()
+            if login == target:
+                return inst.get("permissions", {})
+        return {}
+
     def _calculate_clock_skew(self) -> float:
         """Calculate clock skew between local machine and GitHub API server.
 

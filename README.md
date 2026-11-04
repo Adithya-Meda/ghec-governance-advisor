@@ -35,12 +35,11 @@ All permissions are read-only:
 | `administration: read` | Repository |
 | `contents: read` | Repository |
 | `issues: read` | Repository |
-| `members: read` | Organization |
+| `pull_requests: read` | Repository |
 | `metadata: read` | Repository |
 | `organization_administration: read` | Organization |
+| `members: read` | Organization |
 | `organization_self_hosted_runners: read` | Organization |
-| `pull_requests: read` | Repository |
-| `secret_scanning_alerts: read` | Organization |
 
 ---
 
@@ -78,6 +77,12 @@ repo360 runners --org <your-org>
 ```
 
 All reports are written to `./repo360-output/`.
+
+#### 4. Upgrade
+```bash
+repo360 upgrade
+```
+Stored credentials and GitHub App private keys in `~/.repo360/` are automatically preserved across upgrades.
 
 ---
 
