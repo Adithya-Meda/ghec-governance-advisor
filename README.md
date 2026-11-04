@@ -88,11 +88,9 @@ Navigate to **Settings** &rarr; **Secrets and variables** &rarr; **Actions** in 
 - `REPO360_APP_INSTALLATION_ID`: *(Optional)* Numeric Installation ID (store under **Repository Variables**). Auto-discovered across all organizations if omitted.
 
 ##### AI Remediation Engine (Optional)
-To enable AI-tailored remediations and executive risk narratives, add your provider's API key under **Repository Secrets** or **Organization Secrets**:
-- **Google Gemini (Default):** Add `GEMINI_API_KEY`.
-- **OpenAI:** Add `OPENAI_API_KEY` and set `LLM_PROVIDER: "openai"` (default model: `gpt-4o`).
-- **Anthropic:** Add `ANTHROPIC_API_KEY` and set `LLM_PROVIDER: "anthropic"` (default model: `claude-3-5-sonnet-20241022`).
-- **Universal Fallback:** Add `LLM_API_KEY` to supply the key regardless of the configured provider.
+To enable AI-tailored remediations and executive risk narratives across any provider (Google Gemini, OpenAI, Anthropic), configure a single secret:
+- **`AI_API_KEY`**: Set as an Encrypted Secret with your API key from Google Gemini, OpenAI, or Anthropic. (Legacy keys like `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` are also automatically recognized as fallbacks).
+- **`AI_MODEL`**: *(Optional)* Target model override (e.g., `gemini-3.5-flash`, `gpt-4o`, `claude-3-5-sonnet-20241022`). Repo360 automatically auto-detects the provider from the model name. Defaults to `gemini-3.5-flash`.
 
 *(Note: The rule engine evaluates all governance checks offline if no AI key is provided).*
 
@@ -124,27 +122,17 @@ jobs:
 
       - name: "Run Repo360 Action"
         # Pin to immutable commit SHA (or use 'uses: ./' if running within the Repo360 repo)
-        uses: Adithya-Meda/repo360@e657ee888806bc24893ed7076f0321451af0c390 # main
+        uses: Adithya-Meda/repo360@b0f47b778401306b3a37213b2e59e38f292d3c90 # main
         with:
-          # GitHub App Credentials
+          # Required GitHub App Credentials
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
-          installation_id: ${{ vars.REPO360_APP_INSTALLATION_ID }}
-          api_base_url: ${{ vars.REPO360_API_BASE_URL || 'https://api.github.com' }}
 
-          # AI Remediation Engine Credentials (passed via Encrypted Secrets)
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          llm_api_key: ${{ secrets.LLM_API_KEY }}
-
-          # AI Provider & Model Configuration
-          llm_provider: ${{ vars.LLM_PROVIDER || 'gemini' }}
-          llm_model: ${{ vars.LLM_MODEL || 'gemini-3.5-flash' }}
-
-          # Scope & Reports Output
-          output_dir: "./repo360-output"
-          # Optional: filter by org(s); audits all installed orgs if omitted
+          # Single Unified AI Key (Supports Gemini, OpenAI, or Anthropic)
+          ai_api_key: ${{ secrets.AI_API_KEY || secrets.GEMINI_API_KEY }}
+          # Optional model override (provider is auto-detected):
+          # ai_model: "gpt-4o"
+          # Optional org filter:
           # org: "OrgAlpha,OrgBeta"
 
       - name: "Publish Audit Reports Artifact"

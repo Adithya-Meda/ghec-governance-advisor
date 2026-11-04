@@ -200,19 +200,27 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
 
     # LLM Settings
     llm_provider = (
-        os.getenv("LLM_PROVIDER")
+        os.getenv("AI_PROVIDER")
+        or os.getenv("LLM_PROVIDER")
         or user_llm.get("provider")
         or "gemini"
     ).lower().strip()
 
     # Auto-detect provider from model name if set
-    env_model = os.getenv("LLM_MODEL") or user_llm.get("model") or ""
+    env_model = (
+        os.getenv("AI_MODEL")
+        or os.getenv("LLM_MODEL")
+        or user_llm.get("model")
+        or ""
+    ).strip()
     if env_model:
         m_lower = env_model.lower()
         if m_lower.startswith(("gpt-", "o1", "o3", "chatgpt-")):
             llm_provider = "openai"
         elif m_lower.startswith("claude-"):
             llm_provider = "anthropic"
+        elif m_lower.startswith("gemini-"):
+            llm_provider = "gemini"
 
     # Default model per provider
     default_models = {
@@ -222,29 +230,32 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
     }
     llm_model = env_model or default_models.get(llm_provider, "gemini-3.5-flash")
 
-    # API Key per provider
-    llm_api_key = ""
-    if llm_provider in ("openai", "azure"):
-        llm_api_key = (
-            os.getenv("OPENAI_API_KEY")
-            or os.getenv("LLM_API_KEY")
-            or user_llm.get("api_key")
-            or ""
-        ).strip()
-    elif llm_provider == "anthropic":
-        llm_api_key = (
-            os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("LLM_API_KEY")
-            or user_llm.get("api_key")
-            or ""
-        ).strip()
-    else:
-        llm_api_key = (
-            os.getenv("GEMINI_API_KEY")
-            or os.getenv("LLM_API_KEY")
-            or user_llm.get("api_key")
-            or ""
-        ).strip()
+    # Unified single API key resolution (supports AI_API_KEY, LLM_API_KEY, or provider-specific keys)
+    llm_api_key = (
+        os.getenv("AI_API_KEY")
+        or os.getenv("LLM_API_KEY")
+        or ""
+    ).strip()
+
+    if not llm_api_key:
+        if llm_provider in ("openai", "azure"):
+            llm_api_key = (
+                os.getenv("OPENAI_API_KEY")
+                or user_llm.get("api_key")
+                or ""
+            ).strip()
+        elif llm_provider == "anthropic":
+            llm_api_key = (
+                os.getenv("ANTHROPIC_API_KEY")
+                or user_llm.get("api_key")
+                or ""
+            ).strip()
+        else:
+            llm_api_key = (
+                os.getenv("GEMINI_API_KEY")
+                or user_llm.get("api_key")
+                or ""
+            ).strip()
 
     if llm_api_key.startswith("${") and llm_api_key.endswith("}"):
         llm_api_key = ""

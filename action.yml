@@ -10,7 +10,7 @@ inputs:
     description: "GitHub App RSA private key (.pem string)"
     required: true
   installation_id:
-    description: "GitHub App Installation ID (optional: auto-discovered if omitted)"
+    description: "GitHub App Installation ID (optional: auto-discovered across all organizations if omitted)"
     required: false
     default: ""
   api_base_url:
@@ -33,30 +33,39 @@ inputs:
     description: "Directory to save generated Excel, CSV, and HTML reports"
     required: false
     default: "./repo360-output"
+  ai_api_key:
+    description: "Unified AI API key for any provider (Google Gemini, OpenAI, Anthropic)"
+    required: false
+    default: ""
+  ai_model:
+    description: "Optional AI model identifier (e.g. 'gemini-3.5-flash', 'gpt-4o', 'claude-3-5-sonnet-20241022'). Provider is auto-detected from model name."
+    required: false
+    default: "gemini-3.5-flash"
+  # Legacy backward-compatibility inputs
   gemini_api_key:
-    description: "Optional Google Gemini API key for AI-tailored remediations"
+    description: "Legacy alias for ai_api_key"
     required: false
     default: ""
   openai_api_key:
-    description: "Optional OpenAI API key"
+    description: "Legacy alias for ai_api_key"
     required: false
     default: ""
   anthropic_api_key:
-    description: "Optional Anthropic API key"
+    description: "Legacy alias for ai_api_key"
     required: false
     default: ""
   llm_api_key:
-    description: "Optional universal LLM API key (fallback for any provider)"
+    description: "Legacy alias for ai_api_key"
     required: false
     default: ""
   llm_provider:
-    description: "LLM provider name: 'gemini', 'openai', or 'anthropic'"
+    description: "Legacy provider override ('gemini', 'openai', 'anthropic')"
     required: false
-    default: "gemini"
+    default: ""
   llm_model:
-    description: "LLM model identifier"
+    description: "Legacy alias for ai_model"
     required: false
-    default: "gemini-3.5-flash"
+    default: ""
 
 runs:
   using: "composite"
@@ -79,12 +88,9 @@ runs:
         REPO360_APP_PRIVATE_KEY: ${{ inputs.private_key }}
         REPO360_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
         REPO360_API_BASE_URL: ${{ inputs.api_base_url }}
-        GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
-        OPENAI_API_KEY: ${{ inputs.openai_api_key }}
-        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
-        LLM_API_KEY: ${{ inputs.llm_api_key }}
-        LLM_PROVIDER: ${{ inputs.llm_provider }}
-        LLM_MODEL: ${{ inputs.llm_model }}
+        AI_API_KEY: ${{ inputs.ai_api_key || inputs.gemini_api_key || inputs.openai_api_key || inputs.anthropic_api_key || inputs.llm_api_key }}
+        AI_MODEL: ${{ inputs.ai_model || inputs.llm_model }}
+        AI_PROVIDER: ${{ inputs.llm_provider }}
       run: |
         CMD="repo360 audit --output-dir ${{ inputs.output_dir }}"
         if [ -n "${{ inputs.org }}" ]; then

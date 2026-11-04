@@ -104,3 +104,26 @@ def test_resolve_runtime_credentials_env_priority() -> None:
             os.environ.pop("REPO360_APP_ID", None)
             os.environ.pop("REPO360_APP_INSTALLATION_ID", None)
             os.environ.pop("GEMINI_API_KEY", None)
+
+
+def test_resolve_runtime_credentials_unified_ai_key() -> None:
+    """Verify single unified AI_API_KEY and model provider auto-detection."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.environ["REPO360_CONFIG_DIR"] = temp_dir
+        os.environ["AI_API_KEY"] = "sk-unified-key-12345"
+        os.environ["AI_MODEL"] = "gpt-4o"
+        try:
+            creds = resolve_runtime_credentials()
+            assert creds["llm_api_key"] == "sk-unified-key-12345"
+            assert creds["llm_provider"] == "openai"
+            assert creds["llm_model"] == "gpt-4o"
+
+            # Auto-detect anthropic
+            os.environ["AI_MODEL"] = "claude-3-5-sonnet-20241022"
+            creds_claude = resolve_runtime_credentials()
+            assert creds_claude["llm_provider"] == "anthropic"
+            assert creds_claude["llm_model"] == "claude-3-5-sonnet-20241022"
+        finally:
+            os.environ.pop("REPO360_CONFIG_DIR", None)
+            os.environ.pop("AI_API_KEY", None)
+            os.environ.pop("AI_MODEL", None)
