@@ -22,15 +22,12 @@ jobs:
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
-          ai_api_key: ${{ secrets.AI_API_KEY || secrets.GEMINI_API_KEY }}
+          ai_api_key: ${{ secrets.AI_API_KEY }}
 
       - name: "Publish Audit Reports Artifact"
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: repo360-audit-reports
-          path: |
-            repo360-output/*.xlsx
-            repo360-output/*.csv
-            repo360-output/*.html
+          path: repo360-output/
           retention-days: 60
