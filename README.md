@@ -40,8 +40,6 @@ repo360 setup --org <your-org>
 ```
 *Opens your browser to register the read-only GitHub App, auto-downloads your private key to `~/.repo360/secrets/`, and prompts for your preferred AI provider.*
 
-*(Note: `repo360-setup --org <your-org>` is also supported as a direct shortcut).*
-
 #### 3. Run Audit
 ```bash
 # Audit all organizations where the GitHub App is installed
@@ -52,10 +50,12 @@ repo360 audit --org OrgAlpha,OrgBeta
 ```
 *Audits all accessible repositories with live progress banners and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
 
-*(Note: `repo360-audit` is also supported as a direct shortcut).*
-
-To view available command-line flags and options:
+#### 4. Help & Options
 ```bash
+# View available commands and global options
+repo360 -h
+
+# View options for the audit command
 repo360 audit -h
 ```
 
