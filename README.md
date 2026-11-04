@@ -122,7 +122,7 @@ jobs:
 
       - name: "Run Repo360 Action"
         # Pin to immutable commit SHA (or use 'uses: ./' if running within the Repo360 repo)
-        uses: Adithya-Meda/repo360@b0f47b778401306b3a37213b2e59e38f292d3c90 # main
+        uses: Adithya-Meda/repo360@35587da11467a5bf5066a337a5089f6655c6b653 # main
         with:
           # Required GitHub App Credentials
           app_id: ${{ vars.REPO360_APP_ID }}
