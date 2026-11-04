@@ -192,8 +192,22 @@ class RepoInspector:
         if primary_lang:
             languages.append(primary_lang)
 
+        # Single API call to list root directory contents instead of 13 separate calls
+        contents = self.client.get(
+            f"/repos/{org}/{repo}/contents",
+            params={"ref": ref},
+            allow_404=True,
+        )
+        root_files: set[str] = set()
+        if isinstance(contents, list):
+            for item in contents:
+                if isinstance(item, dict) and "name" in item:
+                    root_files.add(item["name"])
+
         for filename, lang in manifest_checks:
-            if self.check_file_exists(org, repo, filename, ref=ref):
+            # Check root listing first; fallback to check_file_exists if contents was unavailable
+            exists = (filename in root_files) if root_files else self.check_file_exists(org, repo, filename, ref=ref)
+            if exists:
                 manifests.append(filename)
                 if lang not in languages:
                     languages.append(lang)

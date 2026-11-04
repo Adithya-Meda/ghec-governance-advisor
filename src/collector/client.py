@@ -160,8 +160,11 @@ class GHECClient:
                 )
                 self._handle_rate_limit(response)
 
-                if response.status_code == 404 and allow_404:
-                    return None
+                # 404 Not Found handling
+                if response.status_code == 404:
+                    if allow_404:
+                        return None
+                    response.raise_for_status()
 
                 # Handle Secondary Rate Limit or 429
                 if response.status_code == 429 or (
@@ -188,6 +191,12 @@ class GHECClient:
                     self._sleep_with_heartbeat(backoff)
                     continue
 
+                # Standard 403 Forbidden (Permissions or feature not enabled on plan) - do NOT retry
+                if response.status_code == 403:
+                    if allow_404:
+                        return None
+                    response.raise_for_status()
+
                 # Handle Expired Token (401)
                 if response.status_code == 401 and attempt < self.max_retries:
                     logger.info("GitHub installation token expired. Refreshing token and retrying...")
@@ -205,6 +214,25 @@ class GHECClient:
                 response.raise_for_status()
                 return response.json()
 
+            except requests.exceptions.HTTPError as http_err:
+                # Deterministic HTTP client errors (400, 401, 403, 404, 422) should not be retried as network errors
+                if response is not None and response.status_code in (400, 401, 403, 404, 422):
+                    if allow_404 and response.status_code in (403, 404):
+                        return None
+                    raise http_err
+                if attempt == self.max_retries:
+                    logger.error("API request failed after %d attempts on GET %s: %s", attempt, path, http_err)
+                    raise http_err
+                backoff = int(self.backoff_factor * (2 ** attempt))
+                logger.warning(
+                    "HTTP error on attempt %d/%d for %s (%s). Retrying in %ds...",
+                    attempt,
+                    self.max_retries,
+                    path,
+                    http_err,
+                    backoff,
+                )
+                time.sleep(backoff)
             except requests.exceptions.RequestException as err:
                 if attempt == self.max_retries:
                     logger.error("API request failed after %d attempts on GET %s: %s", attempt, path, err)

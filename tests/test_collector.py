@@ -113,3 +113,30 @@ def test_list_installation_repositories(mock_client: GHECClient) -> None:
         assert repos[0]["name"] == "service-a"
         assert repos[1]["default_branch"] == "develop"
 
+
+def test_detect_tech_stack_optimized_root_listing(mock_client: GHECClient) -> None:
+    """Test detect_tech_stack identifies tech stack from single root contents call."""
+    inspector = RepoInspector(client=mock_client)
+
+    def mock_get(path, *args, **kwargs):
+        if path == "/repos/org/repo":
+            return {"language": "Python"}
+        if path == "/repos/org/repo/contents":
+            return [
+                {"name": "requirements.txt", "type": "file"},
+                {"name": "Dockerfile", "type": "file"},
+                {"name": "README.md", "type": "file"},
+            ]
+        if path == "/repos/org/repo/contents/requirements.txt":
+            import base64
+            return {"content": base64.b64encode(b"fastapi==0.110.0\nuvicorn\n").decode("utf-8"), "encoding": "base64"}
+        return None
+
+    with patch.object(mock_client, "get", side_effect=mock_get):
+        stack = inspector.detect_tech_stack("org", "repo")
+        assert "Python" in stack["languages"]
+        assert "Docker" in stack["languages"]
+        assert "requirements.txt" in stack["manifests"]
+        assert "Dockerfile" in stack["manifests"]
+        assert "Fastapi" in stack["frameworks"]
+

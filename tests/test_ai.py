@@ -294,3 +294,51 @@ def test_anthropic_generation_and_verification(mock_post: MagicMock) -> None:
     assert "Claude Executive Risk Briefing" in summary
 
 
+@patch("google.genai.Client")
+def test_enrich_remediation_uses_cache(mock_client_cls: MagicMock) -> None:
+    """Verify that remediation generation caches by check_id and tech stack to avoid redundant API calls."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_response = MagicMock()
+    mock_response.text = "```yaml\n# Cached Snippet\n```"
+    mock_client.models.generate_content.return_value = mock_response
+
+    engine = AIEngine(api_key="valid-mock-key", enabled=True)
+
+    result1 = CheckResult(
+        check_id="copilot_instructions",
+        check_name="GitHub Copilot Instructions",
+        category="Developer Experience",
+        persona=Persona.CONTRIBUTOR,
+        severity=CheckSeverity.LOW,
+        status=CheckStatus.FAIL,
+        org_name="my-org",
+        repo_name="repo1",
+        current_state="Missing",
+        recommended_state="Present",
+        explanation="Missing .github/copilot-instructions.md",
+    )
+    result2 = CheckResult(
+        check_id="copilot_instructions",
+        check_name="GitHub Copilot Instructions",
+        category="Developer Experience",
+        persona=Persona.CONTRIBUTOR,
+        severity=CheckSeverity.LOW,
+        status=CheckStatus.FAIL,
+        org_name="my-org",
+        repo_name="repo2",
+        current_state="Missing",
+        recommended_state="Present",
+        explanation="Missing .github/copilot-instructions.md",
+    )
+
+    stack = {"languages": ["Python"], "frameworks": ["FastAPI"], "manifests": ["requirements.txt"]}
+    engine.enrich_remediation(result1, stack)
+    engine.enrich_remediation(result2, stack)
+
+    # generate_content should have only been invoked ONCE due to caching
+    assert mock_client.models.generate_content.call_count == 1
+    assert result1.remediation_snippet_after == result2.remediation_snippet_after
+    assert "# Cached Snippet" in result2.remediation_snippet_after
+
+

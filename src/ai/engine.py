@@ -108,6 +108,7 @@ class AIEngine:
         self.base_url = (base_url or "").strip()
         self._client: Optional[Any] = None
         self._gen_config: Optional[Any] = None
+        self._remediation_cache: Dict[str, str] = {}
 
         if self.enabled:
             if self.provider == "gemini":
@@ -558,21 +559,27 @@ Provide ONLY the exact, tailored configuration file content to resolve this for 
 
 Output ONLY the code/configuration snippet inside code fences. Do not add introductory or concluding chat."""
 
-        text = self._generate_text(prompt)
-        if text:
+        cache_key = f"{result.check_id}:{languages}:{frameworks}:{manifests}"
+        if cache_key in self._remediation_cache:
+            cleaned_text = self._remediation_cache[cache_key]
+        else:
+            text = self._generate_text(prompt)
+            if not text:
+                return
             cleaned_text = text.strip()
             # Remove wrapping markdown fences if present for cleaner diff display
             if cleaned_text.startswith("```"):
                 lines = cleaned_text.splitlines()
                 if len(lines) >= 2 and lines[-1].startswith("```"):
                     cleaned_text = "\n".join(lines[1:-1])
+            self._remediation_cache[cache_key] = cleaned_text
 
-            result.remediation_snippet_after = (
-                f"# [AI Tailored for {languages}]\n"
-                f"# ADVISORY ONLY: Review, test, and validate in non-production environments before applying.\n"
-                f"{cleaned_text}"
-            )
-            result.extra_details["ai_enriched"] = True
-            result.extra_details["detected_stack"] = languages
-            result.extra_details["ai_model"] = self.model_name
-            result.extra_details["ai_provider"] = self.provider
+        result.remediation_snippet_after = (
+            f"# [AI Tailored for {languages}]\n"
+            f"# ADVISORY ONLY: Review, test, and validate in non-production environments before applying.\n"
+            f"{cleaned_text}"
+        )
+        result.extra_details["ai_enriched"] = True
+        result.extra_details["detected_stack"] = languages
+        result.extra_details["ai_model"] = self.model_name
+        result.extra_details["ai_provider"] = self.provider
