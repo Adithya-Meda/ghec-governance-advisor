@@ -397,7 +397,7 @@ def run_wizard(
     ai_status = f"{llm_provider.upper()} ({llm_model})" if llm_enabled else "DISABLED"
     print(f"  AI Remediation:   {ai_status}")
     print("-" * 65)
-    print("  No .env, repos.csv, or JSON config files are required!")
+    print("  Zero manual configuration files required!")
     print("  Run your governance audit anytime from any directory:")
     print()
     print("    ghec-advisor")

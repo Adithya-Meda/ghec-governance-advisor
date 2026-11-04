@@ -1,7 +1,7 @@
 """Centralized Credential and Configuration Management for GHEC Advisor.
 
 Enables 100% zero-configuration execution:
-- Eliminates the requirement for .env, repos.csv, and config JSON files.
+- Eliminates the requirement for local configuration or environment files.
 - Persists credentials securely in the user profile directory: ~/.ghec-advisor/config.json
 - Stores RSA private keys in: ~/.ghec-advisor/secrets/
 - Supports multi-tier resolution: Environment Variables > Local .env > User Profile Config.

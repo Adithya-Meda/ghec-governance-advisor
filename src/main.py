@@ -98,24 +98,30 @@ logger = setup_logger()
 
 
 def _log_finding(res: CheckResult) -> None:
-    """Log individual check outcome with top-level PASS, WARN, or FAIL label."""
+    """Log individual check outcome under [INFO] with professional [EXISTS], [MISSING], or [REVIEW] badges."""
     dim = "\033[2m"
+    bold = "\033[1m"
+    green = "\033[92m"
+    yellow = "\033[93m"
+    red = "\033[91m"
     reset = "\033[0m"
-    if res.repo_name:
-        target = f"[{res.repo_name}]"
-    elif res.org_name.startswith("[") and res.org_name.endswith("]"):
-        target = res.org_name
-    else:
-        target = f"[{res.org_name}]"
 
-    if res.status == CheckStatus.FAIL:
-        logger.error("%s %s %s- %s%s", target, res.check_name, dim, res.current_state, reset)
+    raw_target = res.repo_name or res.org_name or "Organization-Wide"
+    target_clean = raw_target.strip("[]")
+    target = f"[{target_clean}]"
+
+    if res.status == CheckStatus.PASS:
+        badge = f"{green}{bold}[EXISTS] {reset}"
+        logger.info("%s %s %s", badge, target, res.check_name)
+    elif res.status == CheckStatus.FAIL:
+        badge = f"{red}{bold}[MISSING]{reset}"
+        logger.info("%s %s %s %s- %s%s", badge, target, res.check_name, dim, res.current_state, reset)
     elif res.status == CheckStatus.WARN:
-        logger.warning("%s %s %s- %s%s", target, res.check_name, dim, res.current_state, reset)
-    elif res.status == CheckStatus.PASS:
-        logger.log(LOG_LEVEL_PASS, "%s %s", target, res.check_name)
+        badge = f"{yellow}{bold}[REVIEW] {reset}"
+        logger.info("%s %s %s %s- %s%s", badge, target, res.check_name, dim, res.current_state, reset)
     elif res.status == CheckStatus.SKIPPED:
-        logger.info("%s %s %s(Skipped - %s)%s", target, res.check_name, dim, res.current_state, reset)
+        badge = f"{dim}[SKIPPED]{reset}"
+        logger.info("%s %s %s %s(Skipped - %s)%s", badge, target, res.check_name, dim, res.current_state, reset)
 
 
 def print_terminal_scorecard(
@@ -151,10 +157,10 @@ def print_terminal_scorecard(
     print(f"{C}{'=' * 76}{X}")
     print(f"   {B}Repositories Audited :{X} {len(targets)}")
     print(f"   {B}Total Checks Run     :{X} {total}")
-    print(f"   {B}Passed Checks (PASS) :{X} {G}{passed:<4} PASS{X}")
-    print(f"   {B}Warning Risks (WARN) :{X} {Y}{warned:<4} WARN{X}")
-    print(f"   {B}Failed Checks (FAIL) :{X} {R}{failed:<4} FAIL{X}")
-    print(f"   {B}Overall Health Score :{X} {score_color}{health_score:.1f}%{X}")
+    print(f"   {B}Controls Present     :{X} {G}{passed:<4} EXISTS{X}")
+    print(f"   {B}Controls Missing     :{X} {R}{failed:<4} MISSING{X}")
+    print(f"   {B}Items Needing Review :{X} {Y}{warned:<4} REVIEW{X}")
+    print(f"   {B}Overall Posture Score:{X} {score_color}{health_score:.1f}%{X}")
     print(f"   {B}AI Remediation Engine:{X} {ai_status}")
     print(f"{C}{'-' * 76}{X}")
     print(f"   {B}Interactive Dashboard (HTML) :{X} {report_paths.get('html', '')}")
@@ -312,12 +318,12 @@ def _run_cli() -> int:
     parser.add_argument(
         "--inventory",
         default="",
-        help="Optional path to repository inventory CSV (defaults to auto-discovering all organization repositories).",
+        help="Optional path to custom repository inventory CSV.",
     )
     parser.add_argument(
         "--auto-discover",
         action="store_true",
-        help="Force auto-discovery of all repositories accessible to the GitHub App (ignores repos.csv).",
+        help="Force auto-discovery of all repositories accessible to the GitHub App.",
     )
     parser.add_argument(
         "--output-dir",
@@ -341,7 +347,7 @@ def _run_cli() -> int:
     try:
         app_cfg_path = _resolve_config_path(args.app_config, "config/config.json")
         advisory_cfg_path = _resolve_config_path(args.advisory_config, "config/advisory.json")
-        inventory_path = _resolve_config_path(args.inventory, "config/repos.csv")
+        inventory_path = _resolve_config_path(args.inventory, "") if args.inventory else None
 
         app_config = (
             ConfigValidator.load_and_validate_json(app_cfg_path)
@@ -515,7 +521,7 @@ def _run_cli() -> int:
             inspector = RepoInspector(client=client)
 
             if not targets:
-                logger.info("No repositories specified in repos.csv. Auto-discovering all accessible repositories via GitHub App...")
+                logger.info("Discovering accessible repositories via GitHub App...")
                 discovered = inspector.list_installation_repositories()
                 for r in discovered:
                     owner = r.get("owner", {}).get("login", "")
