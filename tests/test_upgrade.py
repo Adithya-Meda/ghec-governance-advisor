@@ -16,10 +16,10 @@ from src.upgrade import (
 
 def test_detect_installer_pipx():
     with patch.object(sys, "prefix", "C:\\Users\\test\\AppData\\Local\\pipx\\venvs\\repo360"):
-        with patch("shutil.which", return_value="C:\\bin\\pipx.exe"):
+        with patch("src.upgrade.find_pipx_executable", return_value="C:\\bin\\pipx.exe"):
             installer, cmd = detect_installer()
             assert installer == "pipx"
-            assert cmd == ["pipx", "install", "--force"]
+            assert cmd == ["C:\\bin\\pipx.exe", "runpip", "repo360", "install", "--upgrade"]
 
 
 def test_detect_installer_pip_fallback():
@@ -46,7 +46,7 @@ def test_build_upgrade_command():
 
 
 def test_execute_upgrade_dry_run(capsys):
-    ret = execute_upgrade(["pipx", "install", "--force", "pkg"], dry_run=True)
+    ret = execute_upgrade([("pipx", ["pipx", "runpip", "repo360", "install", "--upgrade", "pkg"])], dry_run=True)
     assert ret == 0
     captured = capsys.readouterr()
     assert "[DRY-RUN]" in captured.out
@@ -56,7 +56,7 @@ def test_execute_upgrade_subprocess_success():
     mock_res = MagicMock()
     mock_res.returncode = 0
     with patch("subprocess.run", return_value=mock_res) as mock_run:
-        ret = execute_upgrade(["pip", "install", "pkg"], dry_run=False)
+        ret = execute_upgrade([("pip", ["pip", "install", "pkg"])], dry_run=False)
         assert ret == 0
         assert mock_run.called
 

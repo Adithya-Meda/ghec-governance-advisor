@@ -191,6 +191,16 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
     orgs = sorted({org for org, _ in targets}, key=str.lower)
     print(f"\033[96m[INFO]\033[0m Inspecting Actions runner fleet across {len(orgs)} organization(s)...")
 
+    # Proactively check organization runner permissions
+    for org_name in orgs:
+        perms = auth.get_installation_permissions(org_name)
+        if perms and perms.get("organization_self_hosted_runners") not in ("read", "write"):
+            print(
+                f"\033[93m[WARN]\033[0m GitHub App installation on '{org_name}' is missing: organization_self_hosted_runners: read.\n"
+                f"       Accept updated permissions in GitHub:\n"
+                f"       https://github.com/organizations/{org_name}/settings/installations"
+            )
+
     runners, runner_metrics, org_runner_metrics = collect_runners_and_metrics(
         client, orgs, targets, since, end, cfg, failures, metadata_cache
     )

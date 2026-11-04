@@ -20,6 +20,33 @@ DEFAULT_REPO_URL = "https://github.com/Adithya-Meda/repo360.git"
 GITHUB_API_COMMITS = "https://api.github.com/repos/Adithya-Meda/repo360/commits/main"
 
 
+def find_pipx_executable() -> Optional[str]:
+    """Locate pipx executable in PATH or standard user package script directories."""
+    path_hit = shutil.which("pipx")
+    if path_hit:
+        return path_hit
+
+    appdata = os.environ.get("LOCALAPPDATA")
+    candidates = [
+        Path(os.path.expanduser("~")) / ".local" / "bin" / "pipx.exe",
+        Path(os.path.expanduser("~")) / ".local" / "bin" / "pipx",
+    ]
+    if appdata:
+        candidates.extend([
+            Path(appdata) / "Programs" / "Python" / "Scripts" / "pipx.exe",
+            Path(appdata) / "pipx" / "pipx.exe",
+        ])
+        packages_dir = Path(appdata) / "Packages"
+        if packages_dir.is_dir():
+            for p in packages_dir.glob("PythonSoftwareFoundation.Python.*/LocalCache/local-packages/Python*/Scripts/pipx.exe"):
+                candidates.append(p)
+
+    for c in candidates:
+        if c.is_file():
+            return str(c)
+    return None
+
+
 def detect_installer() -> Tuple[str, List[str]]:
     """Detect whether Repo360 is running within pipx or standard pip/virtualenv.
 
@@ -27,20 +54,58 @@ def detect_installer() -> Tuple[str, List[str]]:
         Tuple of (installer_name, base_command_tokens).
     """
     prefix = sys.prefix.lower()
-    has_pipx = shutil.which("pipx") is not None
+    pipx_bin = find_pipx_executable()
 
-    if "pipx" in prefix and has_pipx:
-        return "pipx", ["pipx", "install", "--force"]
+    if "pipx" in prefix and pipx_bin:
+        # Use 'pipx runpip' to safely upgrade in-place without tearing down the venv,
+        # preventing Windows OS Error 32 (file lock on running python.exe)
+        return "pipx", [pipx_bin, "runpip", "repo360", "install", "--upgrade"]
 
     # Fallback to python -m pip using the current active interpreter
     return "pip", [sys.executable, "-m", "pip", "install", "--upgrade"]
+
+
+def get_upgrade_commands(
+    repo_url: str = DEFAULT_REPO_URL,
+    installer_override: Optional[str] = None,
+) -> List[Tuple[str, List[str]]]:
+    """Generate prioritized upgrade command candidates for resilient execution across platforms.
+
+    Returns:
+        List of (strategy_name, command_tokens).
+    """
+    target_spec = f"git+{repo_url}"
+    commands: List[Tuple[str, List[str]]] = []
+
+    prefix = sys.prefix.lower()
+    pipx_bin = find_pipx_executable()
+
+    if installer_override == "pip":
+        return [("pip", [sys.executable, "-m", "pip", "install", "--upgrade", target_spec])]
+
+    # 1. In pipx: in-place upgrade via 'pipx runpip' avoids OS Error 32 on Windows and venv rebuilds
+    if ("pipx" in prefix or installer_override == "pipx") and pipx_bin:
+        commands.append(("pipx", [pipx_bin, "runpip", "repo360", "install", "--upgrade", target_spec]))
+
+    # 2. Check for uv if available
+    uv_bin = shutil.which("uv")
+    if not uv_bin and pipx_bin:
+        cand = Path(pipx_bin).parent / ("uv.exe" if sys.platform == "win32" else "uv")
+        if cand.is_file():
+            uv_bin = str(cand)
+    if uv_bin:
+        commands.append(("uv", [uv_bin, "pip", "install", "--python", sys.executable, "--upgrade", target_spec]))
+
+    # 3. Universal Python interpreter fallback
+    commands.append(("pip", [sys.executable, "-m", "pip", "install", "--upgrade", target_spec]))
+    return commands
 
 
 def build_upgrade_command(
     repo_url: str = DEFAULT_REPO_URL,
     installer_override: Optional[str] = None,
 ) -> Tuple[str, List[str]]:
-    """Construct the exact shell command to install/upgrade Repo360 to the latest version.
+    """Construct the primary shell command to upgrade Repo360 to the latest version.
 
     Args:
         repo_url: Git repository clone URL.
@@ -49,17 +114,8 @@ def build_upgrade_command(
     Returns:
         Tuple of (installer_type, command_list).
     """
-    installer, base_cmd = detect_installer()
-    if installer_override:
-        if installer_override.lower() == "pipx":
-            installer, base_cmd = "pipx", ["pipx", "install", "--force"]
-        else:
-            installer, base_cmd = "pip", [sys.executable, "-m", "pip", "install", "--upgrade"]
-
-    target_spec = f"git+{repo_url}"
-    cmd = list(base_cmd)
-    cmd.append(target_spec)
-    return installer, cmd
+    candidates = get_upgrade_commands(repo_url, installer_override)
+    return candidates[0][0], candidates[0][1]
 
 
 def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
@@ -93,20 +149,26 @@ def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
     return False, "Could not query remote GitHub repository."
 
 
-def execute_upgrade(cmd: List[str], dry_run: bool = False) -> int:
-    """Execute the upgrade process via subprocess."""
-    cmd_str = " ".join(cmd)
+def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = False) -> int:
+    """Execute the upgrade process via subprocess with resilient fallback across strategies."""
     if dry_run:
-        print(f"\n\033[96m[DRY-RUN]\033[0m Would execute upgrade command:\n  {cmd_str}\n")
+        chosen = candidates[0]
+        print(f"\n\033[96m[DRY-RUN]\033[0m Would execute upgrade ({chosen[0]}):\n  {' '.join(chosen[1])}\n")
         return 0
 
-    print(f"\n\033[96m[INFO]\033[0m Executing upgrade:\n  {cmd_str}\n")
-    try:
-        result = subprocess.run(cmd, check=False)
-        return result.returncode
-    except Exception as exc:
-        print(f"\n\033[91m[FAIL]\033[0m Upgrade command execution failed: {exc}\n")
-        return 1
+    last_error: Optional[str] = None
+    for strategy_name, cmd in candidates:
+        logger.debug("Executing upgrade via %s: %s", strategy_name, " ".join(cmd))
+        try:
+            result = subprocess.run(cmd, check=False)
+            if result.returncode == 0:
+                return 0
+            last_error = f"Strategy '{strategy_name}' exited with code {result.returncode}"
+        except Exception as exc:
+            last_error = f"Strategy '{strategy_name}' execution failed: {exc}"
+
+    print(f"\n\033[91m[FAIL]\033[0m Upgrade failed: {last_error}\n")
+    return 1
 
 
 def verify_local_state() -> None:
@@ -172,11 +234,10 @@ def run_upgrade_cli(argv: Optional[List[str]] = None) -> int:
         print(f"Run 'repo360 upgrade' to install via {installer}: {' '.join(cmd)}\n")
         return 0
 
-    installer, cmd = build_upgrade_command(args.source, installer_override)
-    print(f"\033[96m[INFO]\033[0m Detected package manager: \033[1m{installer}\033[0m")
-    print(f"\033[96m[INFO]\033[0m Upgrading Repo360 to latest version from {args.source}...")
+    candidates = get_upgrade_commands(args.source, installer_override)
+    print(f"\033[96m[INFO]\033[0m Upgrading Repo360 to the latest version...")
 
-    exit_code = execute_upgrade(cmd, dry_run=args.dry_run)
+    exit_code = execute_upgrade(candidates, dry_run=args.dry_run)
     if exit_code == 0 and not args.dry_run:
         print("\n\033[92m[SUCCESS]\033[0m Repo360 upgrade completed successfully.")
         verify_local_state()

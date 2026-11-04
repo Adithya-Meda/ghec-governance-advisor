@@ -82,8 +82,13 @@ def collect_runners_and_metrics(
 
             logger.info("Discovered %d organization runner(s) for %s", len(runners), org)
         except Exception as exc:
-            logger.warning("Actions self-hosted runners query failed for %s: %s", org, exc)
-            failures.append((f"{org} (Actions runners)", str(exc)))
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if status_code == 403:
+                err_msg = "403 Forbidden (requires 'organization_self_hosted_runners: read' permission on GitHub App)"
+            else:
+                err_msg = str(exc)
+            logger.warning("Actions self-hosted runners query failed for %s: %s", org, err_msg)
+            failures.append((f"{org} (Actions runners)", err_msg))
 
     # Filter targets to active repositories
     active_targets: List[Tuple[str, str]] = []
