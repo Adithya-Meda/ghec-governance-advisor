@@ -21,7 +21,7 @@ def test_resolve_api_base_url_domains() -> None:
 def test_get_manifest_payload() -> None:
     """Verify GitHub App manifest contains required enterprise read permissions."""
     manifest = get_manifest("https://github.com")
-    assert manifest["name"] == "GH-Governance-Advisor"
+    assert manifest["name"] == "Repo360"
     assert manifest["hook_attributes"]["active"] is False
     assert manifest["default_permissions"]["organization_administration"] == "read"
     assert manifest["default_permissions"]["administration"] == "read"

@@ -1,17 +1,17 @@
-# GitHub Governance Advisor
+# Repo360
 
-Audits GitHub organizations and repositories against security, governance, and CI/CD best practices. Generates interactive HTML, Excel, and CSV reports.
+360-Degree Platform Governance, Compliance, and Engineering Intelligence for GitHub Organizations. Audits repositories, monitors security posture, evaluates CI/CD hardening, and generates interactive HTML dashboards, executive Excel workbooks, and flat SIEM CSV feeds.
 
 > [!WARNING]
-> **Advisory Only:** Remediation snippets and summaries are advisory. Always validate suggested changes before applying them to production.
+> **Advisory Only:** Remediation snippets, policy suggestions, and summaries are advisory. Always validate suggested changes before applying them to production environments.
 
 ---
 
 ## Prerequisites
 
 - **Python 3.10+** and **[pipx](https://pypa.github.io/pipx/)** (for CLI use)
-- **Organization Admin / Owner access** on GitHub (to create and install the read-only GitHub App)
-- *(Optional)* **AI API Key** (Gemini, OpenAI, or Anthropic for AI remediations; the rule engine works without one)
+- **Organization Admin / Owner access** on GitHub (to register and install the read-only GitHub App)
+- *(Optional)* **AI API Key** (Gemini, OpenAI, or Anthropic for AI-tailored remediations; the rule engine functions completely offline without one)
 
 ---
 
@@ -19,9 +19,9 @@ Audits GitHub organizations and repositories against security, governance, and C
 
 | Platform | Domain Example | Setup Command |
 | :--- | :--- | :--- |
-| **GitHub.com** | `https://github.com` | `ghec-setup --org <your-org>` |
-| **GHE.com** *(Data Residency)* | `https://<enterprise>.ghe.com` | `ghec-setup --org <your-org> --domain https://<enterprise>.ghe.com` |
-| **GHES** *(On-Premises)* | `https://ghe.mycompany.com` | `ghec-setup --org <your-org> --domain https://ghe.mycompany.com` |
+| **GitHub.com** | `https://github.com` | `repo360 setup --org <your-org>` |
+| **GHE.com** *(Data Residency)* | `https://<enterprise>.ghe.com` | `repo360 setup --org <your-org> --domain https://<enterprise>.ghe.com` |
+| **GHES** *(On-Premises)* | `https://ghe.mycompany.com` | `repo360 setup --org <your-org> --domain https://ghe.mycompany.com` |
 
 ---
 
@@ -29,7 +29,7 @@ Audits GitHub organizations and repositories against security, governance, and C
 
 ### Method 1: Local CLI (Recommended)
 
-No cloning, `.env`, or configuration files required.
+No cloning, `.env`, or manual configuration files required.
 
 #### 1. Install (or Upgrade)
 ```bash
@@ -38,19 +38,21 @@ pipx install --force git+https://github.com/Adithya-Meda/ghec-governance-advisor
 
 #### 2. Setup (One-Time)
 ```bash
-ghec-setup --org <your-org>
+repo360 setup --org <your-org>
 ```
-*Opens your browser to register the read-only GitHub App, auto-downloads your private key, and prompts for your preferred AI provider.*
+*Opens your browser to register the read-only GitHub App, auto-downloads your private key to `~/.repo360/secrets/`, and prompts for your preferred AI provider.*
+
+*(Note: `repo360-setup --org <your-org>` is also supported as a direct shortcut).*
 
 #### 3. Run Audit
 ```bash
-ghec-advisor
+repo360
 ```
-*Audits all accessible repositories and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
+*Audits all accessible repositories with live progress banners and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
 
 To view available command-line flags and options:
 ```bash
-ghec-advisor -h
+repo360 -h
 ```
 
 ---
@@ -60,12 +62,14 @@ ghec-advisor -h
 Run automated audits inside any repository without local setup.
 
 #### 1. Store Secrets in Caller Repository
-- `GHEC_APP_ID`: Numeric GitHub App ID (Repository Variable)
-- `GHEC_APP_PRIVATE_KEY`: Private key `.pem` contents (Repository Secret)
+- `REPO360_APP_ID`: Numeric GitHub App ID (Repository Variable or Secret)
+- `REPO360_APP_PRIVATE_KEY`: Private key `.pem` contents (Repository Secret)
+
+*(Note: Legacy `GHEC_APP_ID` and `GHEC_APP_PRIVATE_KEY` remain fully supported).*
 
 #### 2. Workflow Example (`.github/workflows/audit.yml`)
 ```yaml
-name: "Governance Audit"
+name: "Repo360 Platform Audit"
 
 on:
   workflow_dispatch:
@@ -78,25 +82,25 @@ jobs:
     steps:
       - uses: Adithya-Meda/ghec-governance-advisor@v1
         with:
-          app_id: ${{ vars.GHEC_APP_ID }}
-          private_key: ${{ secrets.GHEC_APP_PRIVATE_KEY }}
+          app_id: ${{ vars.REPO360_APP_ID }}
+          private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
           # For GHE.com: api_base_url: "https://api.<enterprise>.ghe.com"
           # For GHES:    api_base_url: "https://ghe.mycompany.com/api/v3"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: governance-reports
+          name: repo360-reports
           path: output/
 ```
 
 ---
 
-## Audited Checks
+## Audited Checks & Platform Coverage
 
-- **Org Governance:** Organization rulesets, secret scanning push protection, runner group restrictions, default workflow permissions.
-- **Repository Security:** Branch protection review gates (2 approvals), `CODEOWNERS` validation, Action commit SHA pinning, redundancy concurrency groups, Dependabot.
-- **Developer Experience:** Dev containers (`devcontainer.json`), GitHub Copilot instructions, issue & PR templates, pre-commit hooks.
+- **Org Governance:** Organization rulesets, secret scanning push protection, runner group least privilege isolation, default workflow token permissions.
+- **Repository Security:** Branch protection review gates (2 approvals), `CODEOWNERS` validation, GitHub Actions commit SHA pinning, workflow concurrency groups, Dependabot.
+- **Developer Enablement:** Dev containers (`devcontainer.json`), GitHub Copilot instructions, standardized issue & PR templates, pre-commit hooks.
 
 ---
 

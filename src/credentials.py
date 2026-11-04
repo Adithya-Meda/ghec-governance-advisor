@@ -1,9 +1,9 @@
-"""Centralized Credential and Configuration Management for GHEC Advisor.
+"""Centralized Credential and Configuration Management for Repo360.
 
 Enables 100% zero-configuration execution:
 - Eliminates the requirement for local configuration or environment files.
-- Persists credentials securely in the user profile directory: ~/.ghec-advisor/config.json
-- Stores RSA private keys in: ~/.ghec-advisor/secrets/
+- Persists credentials securely in the user profile directory: ~/.repo360/config.json
+- Stores RSA private keys in: ~/.repo360/secrets/
 - Supports multi-tier resolution: Environment Variables > Local .env > User Profile Config.
 """
 
@@ -12,22 +12,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import time
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("ghec-credentials")
+logger = logging.getLogger("repo360-credentials")
 
 
 def get_user_config_dir() -> str:
-    """Return OS-standard user configuration directory for GHEC Advisor.
+    """Return OS-standard user configuration directory for Repo360.
 
-    Can be overridden via GHEC_CONFIG_DIR environment variable.
+    Can be overridden via REPO360_CONFIG_DIR or GHEC_CONFIG_DIR environment variables.
+    Seamlessly migrates legacy ~/.ghec-advisor if found.
     """
-    custom = os.getenv("GHEC_CONFIG_DIR")
+    custom = os.getenv("REPO360_CONFIG_DIR") or os.getenv("GHEC_CONFIG_DIR")
     if custom:
         path = os.path.abspath(custom)
     else:
-        path = os.path.expanduser("~/.ghec-advisor")
+        path = os.path.expanduser("~/.repo360")
+        legacy_path = os.path.expanduser("~/.ghec-advisor")
+        if not os.path.exists(path) and os.path.isdir(legacy_path):
+            try:
+                shutil.copytree(legacy_path, path)
+            except Exception:
+                pass
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -44,7 +52,7 @@ def get_secrets_dir() -> str:
     return path
 
 
-def save_private_key(key_content: str, app_slug: str = "gh-governance-advisor", dest_dir: Optional[str] = None) -> str:
+def save_private_key(key_content: str, app_slug: str = "repo360", dest_dir: Optional[str] = None) -> str:
     """Save RSA private key with standardized naming convention and safe permissions."""
     today_str = time.strftime("%Y-%m-%d")
     filename = f"{app_slug}.{today_str}.private-key.pem"
@@ -153,34 +161,45 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
     """Resolve credentials across environment variables, local .env, and user profile config.
 
     Precedence:
-    1. System environment variables (for CI/CD pipelines and containers)
+    1. System environment variables (REPO360_* or legacy GHEC_*)
     2. Local .env file (if running inside a cloned repository)
-    3. User profile config (~/.ghec-advisor/config.json)
+    3. User profile config (~/.repo360/config.json)
     """
     user_cfg = load_user_credentials()
     user_gh = user_cfg.get("github", {})
     user_llm = user_cfg.get("llm", {})
 
     # GitHub App ID
-    app_id = (os.getenv("GHEC_APP_ID") or user_gh.get("app_id") or "")
+    app_id = (os.getenv("REPO360_APP_ID") or os.getenv("GHEC_APP_ID") or user_gh.get("app_id") or "")
     if app_id:
         app_id = str(app_id).strip()
 
     # Installation ID
-    installation_id = (os.getenv("GHEC_APP_INSTALLATION_ID") or user_gh.get("installation_id") or "")
+    installation_id = (
+        os.getenv("REPO360_APP_INSTALLATION_ID")
+        or os.getenv("GHEC_APP_INSTALLATION_ID")
+        or user_gh.get("installation_id")
+        or ""
+    )
     if installation_id:
         installation_id = str(installation_id).strip()
 
     # API Base URL
     api_base_url = (
-        os.getenv("GHEC_API_BASE_URL")
+        os.getenv("REPO360_API_BASE_URL")
+        or os.getenv("GHEC_API_BASE_URL")
         or user_gh.get("api_base_url")
         or "https://api.github.com"
     ).rstrip("/")
 
     # Private Key
-    raw_key = os.getenv("GHEC_APP_PRIVATE_KEY") or ""
-    key_path = os.getenv("GHEC_APP_PRIVATE_KEY_PATH") or user_gh.get("private_key_path") or ""
+    raw_key = os.getenv("REPO360_APP_PRIVATE_KEY") or os.getenv("GHEC_APP_PRIVATE_KEY") or ""
+    key_path = (
+        os.getenv("REPO360_APP_PRIVATE_KEY_PATH")
+        or os.getenv("GHEC_APP_PRIVATE_KEY_PATH")
+        or user_gh.get("private_key_path")
+        or ""
+    )
 
     resolved_key = ""
     if raw_key and raw_key.startswith("-----BEGIN"):

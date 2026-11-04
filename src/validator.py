@@ -13,14 +13,14 @@ VALID_PERSONAS = {"org_admin", "repo_admin", "contributor", "all"}
 
 DEFAULT_APP_CONFIG: Dict[str, Any] = {
     "github": {
-        "api_base_url": "${GHEC_API_BASE_URL:-https://api.github.com}",
+        "api_base_url": "${REPO360_API_BASE_URL:-${GHEC_API_BASE_URL:-https://api.github.com}}",
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_backoff_factor": 1.5,
     },
     "reporting": {
         "output_directory": "./output",
-        "report_prefix": "ghec_governance_audit",
+        "report_prefix": "repo360_audit",
         "generate_xlsx": True,
         "generate_csv": True,
         "generate_html": True,
@@ -40,8 +40,8 @@ DEFAULT_ADVISORY_CONFIG: Dict[str, Any] = {
     "advisory_metadata": {
         "version": "1.0.0",
         "organization": "Enterprise-Platform-Engineering",
-        "last_updated": "2026-11-03",
-        "description": "Centralized Governance, Security & Best Practices Advisory Policies for GHEC",
+        "last_updated": "2026-11-04",
+        "description": "Centralized Governance, Security & Best Practices Advisory Policies for Repo360",
     },
     "enabled_checks": {
         "org_admin": {

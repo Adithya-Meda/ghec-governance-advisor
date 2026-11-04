@@ -48,7 +48,7 @@ def test_excel_reporter_generation(mock_results: list) -> None:
 
         # 1. Verify Executive Summary
         ws_summary = wb["Executive_Summary"]
-        assert ws_summary["B2"].value == "GHEC Governance & Advisory Executive Summary"
+        assert ws_summary["B2"].value == "Repo360 Platform Governance & Intelligence Summary"
         # Check that AI KPI row exists
         metric_labels = [ws_summary.cell(row=r, column=2).value for r in range(5, 15)]
         assert "AI-Tailored Remediations Synthesized" in metric_labels
@@ -129,7 +129,7 @@ def test_html_reporter_generation(mock_results: list) -> None:
         with open(saved_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        assert "GHEC Governance &amp; Advisory Audit Report" in content or "GHEC Governance & Advisory Audit Report" in content
+        assert "Repo360 Platform Governance & Intelligence Report" in content or "Repo360" in content
         assert "Compliance Score" in content
         assert "AI Remediations" in content
         assert "AI Tailored Only" in content

@@ -40,12 +40,12 @@ PORT = 8989
 CALLBACK_URL = f"http://localhost:{PORT}/callback"
 
 
-def get_manifest(github_domain: str, app_name: str = "GH-Governance-Advisor") -> dict:
+def get_manifest(github_domain: str, app_name: str = "Repo360") -> dict:
     """Generate the GitHub App manifest payload."""
     return {
-        "name": app_name or "GH-Governance-Advisor",
+        "name": app_name or "Repo360",
         "url": github_domain,
-        "description": "Platform Governance & Best Practices Advisory Agent for GHEC",
+        "description": "360-Degree Platform Governance, Compliance & Engineering Intelligence for GitHub",
         "hook_attributes": {
             "url": github_domain,
             "active": False,
@@ -233,7 +233,7 @@ def run_wizard(
         return
 
     app_id = result.get("id")
-    app_slug = result.get("slug") or "gh-governance-advisor"
+    app_slug = result.get("slug") or "repo360"
     pem_key = result.get("pem", "")
     install_url = f"{github_domain}/organizations/{org_name}/settings/apps/{app_slug}/installations"
 
@@ -398,14 +398,14 @@ def run_wizard(
     print(f"  AI Remediation:   {ai_status}")
     print("-" * 65)
     print("  Zero manual configuration files required!")
-    print("  Run your governance audit anytime from any directory:")
+    print("  Run your platform audit anytime from any directory:")
     print()
-    print("    ghec-advisor")
+    print("    repo360")
     print("=" * 65 + "\n")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="1-Click GitHub App Setup Wizard for GHEC")
+    parser = argparse.ArgumentParser(description="1-Click GitHub App Setup Wizard for Repo360")
     parser.add_argument(
         "--org",
         required=False,
@@ -416,7 +416,7 @@ def main() -> None:
         "--app-name",
         required=False,
         default="",
-        help="Custom GitHub App name (defaults to GH-Governance-Advisor-<org>).",
+        help="Custom GitHub App name (defaults to Repo360-<org>).",
     )
     parser.add_argument(
         "--domain",

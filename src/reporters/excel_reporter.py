@@ -118,7 +118,7 @@ class ExcelReporter(BaseReporter):
         model_name: str = "",
     ) -> None:
         ws.views.sheetView[0].showGridLines = True
-        ws["B2"] = "GHEC Governance & Advisory Executive Summary"
+        ws["B2"] = "Repo360 Platform Governance & Intelligence Summary"
         ws["B2"].font = self.font_title
 
         total = len(results)

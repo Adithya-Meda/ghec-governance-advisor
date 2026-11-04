@@ -173,7 +173,7 @@ def print_terminal_scorecard(
     )
 
     print(f"\n{C}{'=' * 76}{X}")
-    print(f"{B}{C}   GITHUB ENTERPRISE PLATFORM GOVERNANCE & ENABLEMENT SCORECARD{X}")
+    print(f"{B}{C}   REPO360 PLATFORM GOVERNANCE & ENGINEERING SCORECARD{X}")
     print(f"{C}{'=' * 76}{X}")
     print(f"   {B}Repositories Audited :{X} {len(targets)}")
     print(f"   {B}Total Checks Run     :{X} {total}")
@@ -349,7 +349,15 @@ def _resolve_config_path(custom_path: str, default_relative: str) -> Optional[st
 
 
 def main() -> int:
-    """CLI entrypoint with clean Ctrl+C interruption handling."""
+    """CLI entrypoint with clean Ctrl+C interruption and subcommand routing."""
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] in ("setup", "install-app"):
+        sys.argv.pop(1)
+        from .setup_app import main as setup_main
+        return setup_main()
+    if len(sys.argv) > 1 and sys.argv[1] == "audit":
+        sys.argv.pop(1)
+
     try:
         return _run_cli()
     except KeyboardInterrupt:
@@ -369,7 +377,7 @@ def _run_cli() -> int:
         pass
 
     parser = argparse.ArgumentParser(
-        description="GHEC Platform Governance & Enablement Advisory Agent"
+        description="Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence"
     )
     parser.add_argument(
         "--app-config",
@@ -474,7 +482,7 @@ def _run_cli() -> int:
             logger.warning(
                 "AI Remediation Engine: OFFLINE (%s). "
                 "Audit will proceed using deterministic policy rules. "
-                "To enable AI-tailored remediations, run 'ghec-setup' or configure %s.",
+                "To enable AI-tailored remediations, run 'repo360 setup' or configure %s.",
                 reason,
                 key_hint,
             )
@@ -487,7 +495,7 @@ def _run_cli() -> int:
         logger.warning(
             "AI Remediation Engine: OFFLINE (%s). "
             "Remediations will use deterministic policy defaults. "
-            "To enable AI-tailored remediations, run 'ghec-setup' or configure %s.",
+            "To enable AI-tailored remediations, run 'repo360 setup' or configure %s.",
             offline_reason,
             key_hint,
         )
@@ -499,7 +507,7 @@ def _run_cli() -> int:
     results: List[CheckResult] = []
 
     if args.mock_mode:
-        logger.info("Running in offline mock mode (simulating GHEC audit results)...")
+        logger.info("Running in offline mock mode (simulating Repo360 audit results)...")
         from .mock_generator import create_mock_results
         if not targets:
             targets = [
@@ -539,13 +547,13 @@ def _run_cli() -> int:
 
         if not app_id or not private_key:
             logger.error(
-                "Missing required GitHub App credentials. Run 'ghec-setup' to automatically register "
-                "your GitHub App and download credentials, or set GHEC_APP_ID and GHEC_APP_PRIVATE_KEY."
+                "Missing required GitHub App credentials. Run 'repo360 setup' to automatically register "
+                "your GitHub App and download credentials, or set REPO360_APP_ID and REPO360_APP_PRIVATE_KEY."
             )
             _print_failure_banner(
                 "Missing required GitHub App credentials.\n"
-                "  Action: Run 'ghec-setup' to automatically register your GitHub App and download credentials,\n"
-                "  or configure GHEC_APP_ID and GHEC_APP_PRIVATE_KEY."
+                "  Action: Run 'repo360 setup' to automatically register your GitHub App and download credentials,\n"
+                "  or configure REPO360_APP_ID and REPO360_APP_PRIVATE_KEY."
             )
             return 1
 
@@ -559,7 +567,7 @@ def _run_cli() -> int:
 
             # Auto-discover installation ID if omitted
             if not auth.installation_id:
-                logger.info("GHEC_APP_INSTALLATION_ID not configured. Auto-discovering installations via GitHub App JWT...")
+                logger.info("Installation ID not configured. Auto-discovering installations via GitHub App JWT...")
                 installations = auth.discover_installations()
                 if not installations:
                     logger.error(
@@ -660,7 +668,7 @@ def _run_cli() -> int:
 
     # Generate Reports
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    prefix = app_config.get("reporting", {}).get("report_prefix", "ghec_governance_audit")
+    prefix = app_config.get("reporting", {}).get("report_prefix", "repo360_audit")
 
     xlsx_path = os.path.join(output_dir, f"{prefix}_{timestamp}.xlsx")
     csv_path = os.path.join(output_dir, f"{prefix}_{timestamp}.csv")

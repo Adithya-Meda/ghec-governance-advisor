@@ -55,7 +55,7 @@ class HTMLReporter(BaseReporter):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GHEC Governance & Advisory Audit Report</title>
+  <title>Repo360 - Platform Governance & Intelligence Dashboard</title>
   <style>
     :root {{
       --bg: #0d1117;
@@ -359,7 +359,7 @@ class HTMLReporter(BaseReporter):
   <div class="container">
     <header>
       <div>
-        <h1>GHEC Governance & Advisory Audit Report</h1>
+        <h1>Repo360 Platform Governance & Intelligence Report</h1>
         <div class="timestamp">Audit Run Generated: <strong>{generated_at}</strong></div>
       </div>
       <div>

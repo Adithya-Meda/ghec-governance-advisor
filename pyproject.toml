@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ghec-governance-advisor"
+name = "repo360"
 version = "1.0.0"
-description = "Enterprise GitHub Enterprise Cloud (GHEC) Platform Governance & Enablement Advisory Agent."
+description = "360-Degree Platform Governance, Compliance & Engineering Intelligence Suite."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "GHEC Platform Engineering Team" }
+    { name = "Repo360 Engineering Team" }
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -47,6 +47,8 @@ dev = [
 ]
 
 [project.scripts]
+repo360 = "src.main:main"
+repo360-setup = "src.setup_app:main"
 ghec-advisor = "src.main:main"
 ghec-governance = "src.main:main"
 ghec-setup = "src.setup_app:main"
