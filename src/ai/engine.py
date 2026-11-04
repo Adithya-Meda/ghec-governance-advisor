@@ -109,6 +109,7 @@ class AIEngine:
         self._client: Optional[Any] = None
         self._gen_config: Optional[Any] = None
         self._remediation_cache: Dict[str, str] = {}
+        self.init_error: Optional[str] = None
 
         if self.enabled:
             if self.provider == "gemini":
@@ -123,6 +124,7 @@ class AIEngine:
                     logger.info("AI Engine initialized using Gemini (model: %s)", self.model_name)
                 except Exception as err:
                     logger.warning("Could not initialize Google GenAI client: %s. Falling back to deterministic mode.", err)
+                    self.init_error = f"Package initialization failed: {err}"
                     self.enabled = False
             elif self.provider in ("openai", "azure"):
                 logger.info("AI Engine initialized using OpenAI / Azure (model: %s)", self.model_name)

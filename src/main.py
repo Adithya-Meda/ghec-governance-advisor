@@ -409,11 +409,12 @@ def _run_cli() -> int:
                 logger.error("Execution halted: --require-ai was specified but AI engine is offline (%s).", reason)
                 return 1
     elif not ai_engine.enabled:
+        offline_reason = ai_engine.init_error or f"{key_hint} not configured"
         logger.warning(
-            "AI Remediation Engine: OFFLINE (%s not configured). "
+            "AI Remediation Engine: OFFLINE (%s). "
             "Remediations will use deterministic policy defaults. "
             "To enable AI-tailored remediations, run 'ghec-setup' or configure %s.",
-            key_hint,
+            offline_reason,
             key_hint,
         )
         if args.require_ai:
