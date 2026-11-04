@@ -90,7 +90,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: "Run Repo360 Action"
-        uses: Adithya-Meda/repo360@35587da11467a5bf5066a337a5089f6655c6b653 # main
+        uses: Adithya-Meda/repo360@7c8dc5f3653b6f8a07bdfa65606db7df1296c271 # main
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
