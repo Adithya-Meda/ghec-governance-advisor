@@ -66,15 +66,25 @@ class GHECClient:
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
-    def _sleep_with_heartbeat(self, seconds: int) -> None:
-        """Sleep for the specified seconds while logging a progress heartbeat every 30 seconds."""
-        remaining = seconds
+    def _interruptible_sleep(self, seconds: float) -> None:
+        """Sleep in small 0.5s intervals to ensure immediate responsiveness to Ctrl+C."""
+        remaining = float(seconds)
         while remaining > 0:
-            chunk = min(remaining, 30)
+            chunk = min(remaining, 0.5)
             time.sleep(chunk)
             remaining -= chunk
-            if remaining > 0:
-                logger.info("Rate limit cooldown in progress: %d seconds remaining...", remaining)
+
+    def _sleep_with_heartbeat(self, seconds: int) -> None:
+        """Sleep for the specified seconds while logging a progress heartbeat every 30 seconds."""
+        remaining = float(seconds)
+        last_heartbeat = time.time()
+        while remaining > 0:
+            chunk = min(remaining, 0.5)
+            time.sleep(chunk)
+            remaining -= chunk
+            if time.time() - last_heartbeat >= 30 and remaining > 0:
+                logger.info("Rate limit cooldown in progress: %d seconds remaining...", int(remaining))
+                last_heartbeat = time.time()
 
     def _handle_rate_limit(self, response: requests.Response) -> None:
         """Inspect and log rate limit headers with active pacing for 1000+ repos."""
@@ -208,7 +218,7 @@ class GHECClient:
                     if attempt < self.max_retries:
                         backoff = int(self.backoff_factor * (2 ** attempt))
                         logger.warning("GitHub API server error %s. Retrying in %ds...", response.status_code, backoff)
-                        time.sleep(backoff)
+                        self._interruptible_sleep(backoff)
                         continue
 
                 response.raise_for_status()
@@ -232,7 +242,7 @@ class GHECClient:
                     http_err,
                     backoff,
                 )
-                time.sleep(backoff)
+                self._interruptible_sleep(backoff)
             except requests.exceptions.RequestException as err:
                 if attempt == self.max_retries:
                     logger.error("API request failed after %d attempts on GET %s: %s", attempt, path, err)
@@ -246,7 +256,7 @@ class GHECClient:
                     err,
                     backoff,
                 )
-                time.sleep(backoff)
+                self._interruptible_sleep(backoff)
 
         return None
 

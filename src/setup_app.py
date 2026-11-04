@@ -214,15 +214,19 @@ def run_wizard(
     print("-" * 65)
     print("Starting local listener and opening your browser...")
 
+    socketserver.TCPServer.allow_reuse_address = True
     server = socketserver.TCPServer(("localhost", PORT), ManifestCallbackHandler)
+    server.timeout = 0.5
     if open_browser:
         webbrowser.open(f"http://localhost:{PORT}/")
 
-    # Wait for the single callback request
-    while ManifestCallbackHandler.conversion_result is None:
-        server.handle_request()
+    # Wait for the single callback request (timeout=0.5 ensures responsive Ctrl+C handling on Windows)
+    try:
+        while ManifestCallbackHandler.conversion_result is None:
+            server.handle_request()
+    finally:
+        server.server_close()
 
-    server.server_close()
     result = ManifestCallbackHandler.conversion_result
     if not result:
         print("Setup aborted: Could not obtain GitHub App credentials.")
@@ -422,24 +426,30 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    org = args.org
-    if not org:
-        org = input("Enter your target GitHub Organization name: ").strip()
+    try:
+        org = args.org
+        if not org:
+            org = input("Enter your target GitHub Organization name: ").strip()
 
-    if not org:
-        print("Error: Organization name is required.")
-        return
+        if not org:
+            print("Error: Organization name is required.")
+            return 1
 
-    domain = args.domain
-    if not args.org and domain == "https://github.com":
-        custom_domain = input(
-            "Enter GitHub Domain [https://github.com] (press Enter for default, or e.g. https://<enterprise>.ghe.com or https://ghe.company.com): "
-        ).strip()
-        if custom_domain:
-            domain = custom_domain
+        domain = args.domain
+        if not args.org and domain == "https://github.com":
+            custom_domain = input(
+                "Enter GitHub Domain [https://github.com] (press Enter for default, or e.g. https://<enterprise>.ghe.com or https://ghe.company.com): "
+            ).strip()
+            if custom_domain:
+                domain = custom_domain
 
-    run_wizard(org_name=org, github_domain=domain, app_name=args.app_name)
+        run_wizard(org_name=org, github_domain=domain, app_name=args.app_name)
+        return 0
+    except KeyboardInterrupt:
+        print("\n\nOperation cancelled by user (Ctrl+C). Exiting...")
+        return 130
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())

@@ -65,3 +65,13 @@ def test_main_zero_config_execution() -> None:
             os.chdir(old_cwd)
 
 
+def test_main_keyboard_interrupt_clean_exit() -> None:
+    """Verify that Ctrl+C in CLI exits cleanly with code 130 without unhandled exception."""
+    test_args = ["src.main", "--mock-mode"]
+
+    with patch("sys.argv", test_args):
+        with patch("src.main._run_cli", side_effect=KeyboardInterrupt):
+            exit_code = main()
+            assert exit_code == 130
+
+

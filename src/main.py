@@ -279,6 +279,15 @@ def _resolve_config_path(custom_path: str, default_relative: str) -> Optional[st
 
 
 def main() -> int:
+    """CLI entrypoint with clean Ctrl+C interruption handling."""
+    try:
+        return _run_cli()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def _run_cli() -> int:
     """CLI orchestrator."""
     try:
         from dotenv import load_dotenv

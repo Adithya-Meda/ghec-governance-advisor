@@ -49,3 +49,14 @@ def test_manifest_callback_handler_redirect_form() -> None:
     assert handler.wfile.write.called
     written_html = handler.wfile.write.call_args[0][0].decode("utf-8")
     assert "https://github.com/organizations/test-org/settings/apps/new" in written_html
+
+
+def test_setup_app_main_keyboard_interrupt() -> None:
+    """Verify that Ctrl+C in setup_app exits cleanly with code 130."""
+    from src.setup_app import main as setup_main
+
+    with patch("argparse.ArgumentParser.parse_args") as mock_args:
+        mock_args.return_value = MagicMock(org="my-org", app_name="", domain="https://github.com")
+        with patch("src.setup_app.run_wizard", side_effect=KeyboardInterrupt):
+            code = setup_main()
+            assert code == 130
