@@ -25,6 +25,10 @@ jobs:
           installation_id: ${{ vars.REPO360_APP_INSTALLATION_ID }}
           api_base_url: ${{ vars.REPO360_API_BASE_URL || 'https://api.github.com' }}
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          llm_api_key: ${{ secrets.LLM_API_KEY }}
+          llm_provider: ${{ vars.LLM_PROVIDER || 'gemini' }}
           llm_model: ${{ vars.LLM_MODEL || 'gemini-3.5-flash' }}
           output_dir: "./repo360-output"
 

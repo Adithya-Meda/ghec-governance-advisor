@@ -76,39 +76,87 @@ Repo360 natively supports multi-organization enterprises across GitHub.com, GHE.
 
 ### Method 2: GitHub Actions (CI/CD)
 
-Run automated audits inside any repository without local setup.
+Run automated platform audits across organizations on a scheduled or dispatch basis without local installation.
 
-#### 1. Store Secrets in Caller Repository
-- `REPO360_APP_ID`: Numeric GitHub App ID (Repository Variable or Secret)
-- `REPO360_APP_PRIVATE_KEY`: Private key `.pem` contents (Repository Secret)
+#### 1. Configure Secrets & Variables
 
-#### 2. Workflow Example (`.github/workflows/audit.yml`)
+Navigate to **Settings** &rarr; **Secrets and variables** &rarr; **Actions** in your repository or organization.
+
+##### GitHub App Authentication (Required)
+- `REPO360_APP_ID`: Numeric GitHub App ID (store under **Repository Variables** or **Secrets**).
+- `REPO360_APP_PRIVATE_KEY`: RSA private key `.pem` string (store under **Repository Secrets**).
+- `REPO360_APP_INSTALLATION_ID`: *(Optional)* Numeric Installation ID (store under **Repository Variables**). Auto-discovered across all organizations if omitted.
+
+##### AI Remediation Engine (Optional)
+To enable AI-tailored remediations and executive risk narratives, add your provider's API key under **Repository Secrets** or **Organization Secrets**:
+- **Google Gemini (Default):** Add `GEMINI_API_KEY`.
+- **OpenAI:** Add `OPENAI_API_KEY` and set `LLM_PROVIDER: "openai"` (default model: `gpt-4o`).
+- **Anthropic:** Add `ANTHROPIC_API_KEY` and set `LLM_PROVIDER: "anthropic"` (default model: `claude-3-5-sonnet-20241022`).
+- **Universal Fallback:** Add `LLM_API_KEY` to supply the key regardless of the configured provider.
+
+*(Note: The rule engine evaluates all governance checks offline if no AI key is provided).*
+
+---
+
+#### 2. Workflow Definition (`.github/workflows/audit.yml`)
+
+Following enterprise supply-chain security baselines, all actions are pinned to full 40-character immutable commit SHAs:
+
 ```yaml
 name: "Repo360 Platform Audit"
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 6 * * 1" # Weekly
+    - cron: "0 6 * * 1" # Weekly: Mondays at 06:00 UTC
+
+permissions:
+  contents: read
 
 jobs:
-  audit:
+  governance-audit:
+    name: "Execute Advisory Audit"
     runs-on: ubuntu-latest
+
     steps:
-      - uses: Adithya-Meda/repo360@v1
+      - name: "Checkout Repository"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Run Repo360 Action"
+        # Pin to immutable commit SHA (or use 'uses: ./' if running within the Repo360 repo)
+        uses: Adithya-Meda/repo360@ac4f283c813e005e2569663408d8bb2351ec475f # main
         with:
+          # GitHub App Credentials
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
+          installation_id: ${{ vars.REPO360_APP_INSTALLATION_ID }}
+          api_base_url: ${{ vars.REPO360_API_BASE_URL || 'https://api.github.com' }}
+
+          # AI Remediation Engine Credentials (passed via Encrypted Secrets)
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          llm_api_key: ${{ secrets.LLM_API_KEY }}
+
+          # AI Provider & Model Configuration
+          llm_provider: ${{ vars.LLM_PROVIDER || 'gemini' }}
+          llm_model: ${{ vars.LLM_MODEL || 'gemini-3.5-flash' }}
+
+          # Scope & Reports Output
+          output_dir: "./repo360-output"
           # Optional: filter by org(s); audits all installed orgs if omitted
           # org: "OrgAlpha,OrgBeta"
-          # For GHE.com: api_base_url: "https://api.<enterprise>.ghe.com"
-          # For GHES:    api_base_url: "https://ghe.mycompany.com/api/v3"
 
-      - uses: actions/upload-artifact@v4
+      - name: "Publish Audit Reports Artifact"
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: repo360-reports
-          path: repo360-output/
+          name: repo360-audit-reports
+          path: |
+            repo360-output/*.xlsx
+            repo360-output/*.csv
+            repo360-output/*.html
+          retention-days: 60
 ```
 
 ---
