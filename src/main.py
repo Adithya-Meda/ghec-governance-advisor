@@ -211,9 +211,18 @@ def _log_repo_banner(
     """Log an executive progress banner indicating the repository currently being evaluated."""
     pct = int((idx / total) * 100) if total > 0 else 100
     bar_length = 15
-    filled_len = int(bar_length * idx // total) if total > 0 else bar_length
-    bar = "=" * (filled_len - 1) + ">" if (0 < filled_len < bar_length) else ("=" * filled_len)
-    bar = bar.ljust(bar_length, " ")
+    filled_len = max(1, int(round(bar_length * idx / total))) if (idx > 0 and total > 0) else 0
+    filled_len = min(filled_len, bar_length)
+
+    if 0 < filled_len < bar_length:
+        filled_str = "=" * (filled_len - 1) + ">"
+    elif filled_len >= bar_length:
+        filled_str = "=" * bar_length
+    else:
+        filled_str = ""
+
+    unfilled_len = max(0, bar_length - len(filled_str))
+    unfilled_str = "-" * unfilled_len
 
     stack_str = ""
     if tech_stack:
@@ -230,7 +239,7 @@ def _log_repo_banner(
 
     pad = len(str(total))
     pct_badge = f"{B}{Y}[{pct:3d}% | {idx:>{pad}}/{total}]{X}"
-    bar_badge = f"{C}[{bar}]{X}"
+    bar_badge = f"{C}[{B}{filled_str}{X}{D}{unfilled_str}{C}]{X}"
     repo_title = f"{B}{W}{target.org_name}/{target.repo_name}{X}"
     branch_info = f"{D}(branch: {target.default_branch}{stack_str}){X}"
 
