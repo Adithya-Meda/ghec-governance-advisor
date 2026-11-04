@@ -348,15 +348,50 @@ def _resolve_config_path(custom_path: str, default_relative: str) -> Optional[st
     return None
 
 
+def _print_root_help() -> int:
+    """Print the top-level Repo360 CLI commands and overview."""
+    print("""Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence
+
+Usage:
+  repo360 <command> [options]
+
+Commands:
+  audit       Run security, platform governance, and CI/CD audit across repositories
+  setup       Launch 1-click GitHub App setup wizard & credential configuration
+
+Roadmap Commands:
+  activity    Analyze contributor cadence, seat allocation, and audit logs
+  runners     Inspect Actions runner fleet usage, execution minutes, and bottlenecks
+
+Options:
+  -h, --help  Show this help message or help for a specific command
+
+Run 'repo360 <command> --help' for details on a specific command (e.g. 'repo360 audit -h').
+""")
+    return 0
+
+
 def main() -> int:
     """CLI entrypoint with clean Ctrl+C interruption and subcommand routing."""
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] in ("setup", "install-app"):
-        sys.argv.pop(1)
-        from .setup_app import main as setup_main
-        return setup_main()
-    if len(sys.argv) > 1 and sys.argv[1] == "audit":
-        sys.argv.pop(1)
+    if len(sys.argv) > 1:
+        subcmd = sys.argv[1].lower()
+        if subcmd in ("setup", "install-app"):
+            sys.argv.pop(1)
+            from .setup_app import main as setup_main
+            return setup_main()
+        elif subcmd in ("activity", "users"):
+            print("\n[Repo360] 'activity' command is scheduled on the Repo360 roadmap.")
+            print("  Coming soon: contributor cadence, seat tracking, and audit log analysis.\n")
+            return 0
+        elif subcmd in ("runners", "metrics"):
+            print("\n[Repo360] 'runners' command is scheduled on the Repo360 roadmap.")
+            print("  Coming soon: runner fleet utilization, queue wait times, and concurrency metrics.\n")
+            return 0
+        elif subcmd == "audit":
+            sys.argv.pop(1)
+        elif subcmd in ("-h", "--help") and len(sys.argv) == 2:
+            return _print_root_help()
 
     try:
         return _run_cli()
@@ -377,6 +412,7 @@ def _run_cli() -> int:
         pass
 
     parser = argparse.ArgumentParser(
+        prog="repo360 audit",
         description="Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence"
     )
     parser.add_argument(

@@ -48,6 +48,7 @@ dev = [
 
 [project.scripts]
 repo360 = "src.main:main"
+repo360-audit = "src.main:main"
 repo360-setup = "src.setup_app:main"
 ghec-advisor = "src.main:main"
 ghec-governance = "src.main:main"

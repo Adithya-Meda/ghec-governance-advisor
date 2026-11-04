@@ -44,13 +44,15 @@ repo360 setup --org <your-org>
 
 #### 3. Run Audit
 ```bash
-repo360
+repo360 audit
 ```
 *Audits all accessible repositories with live progress banners and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
 
+*(Note: `repo360-audit` is also supported as a direct shortcut).*
+
 To view available command-line flags and options:
 ```bash
-repo360 -h
+repo360 audit -h
 ```
 
 ---

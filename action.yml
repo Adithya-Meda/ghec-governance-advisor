@@ -81,7 +81,7 @@ runs:
         LLM_PROVIDER: ${{ inputs.llm_provider }}
         LLM_MODEL: ${{ inputs.llm_model }}
       run: |
-        CMD="repo360 --output-dir ${{ inputs.output_dir }}"
+        CMD="repo360 audit --output-dir ${{ inputs.output_dir }}"
         if [ -n "${{ inputs.advisory_config }}" ]; then
           CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
         fi

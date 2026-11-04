@@ -400,12 +400,15 @@ def run_wizard(
     print("  Zero manual configuration files required!")
     print("  Run your platform audit anytime from any directory:")
     print()
-    print("    repo360")
+    print("    repo360 audit")
     print("=" * 65 + "\n")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="1-Click GitHub App Setup Wizard for Repo360")
+    parser = argparse.ArgumentParser(
+        prog="repo360 setup",
+        description="1-Click GitHub App Setup Wizard for Repo360"
+    )
     parser.add_argument(
         "--org",
         required=False,
