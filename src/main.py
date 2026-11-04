@@ -374,7 +374,7 @@ Commands:
   setup       Launch 1-click GitHub App setup wizard & credential configuration
   activity    Analyze contributor cadence, active days, seat allocation, and commit/PR metrics
   runners     Inspect Actions self-hosted runner fleet usage, compute hours, and queue wait times
-  upgrade     Upgrade Repo360 CLI to the latest release or branch directly from GitHub
+  upgrade     Upgrade Repo360 CLI to the latest version directly from GitHub
 
 Options:
   -h, --help  Show this help message or help for a specific command
