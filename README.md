@@ -29,8 +29,6 @@
 
 ### Method 1: Local CLI (Recommended)
 
-No cloning, `.env`, or manual configuration files required.
-
 #### 1. Install
 ```bash
 pipx install git+https://github.com/Adithya-Meda/repo360.git
