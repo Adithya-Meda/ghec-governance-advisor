@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import os
-import time
 from typing import List
 
 from .base_reporter import BaseReporter
@@ -33,7 +32,7 @@ class HTMLReporter(BaseReporter):
 
         effective_total = max(total - skipped, 1)
         compliance_pct = round((passed / effective_total) * 100, 1)
-        generated_at = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        generated_at = self.get_local_timestamp()
 
         # Render finding rows
         cards_html = []
@@ -300,16 +299,6 @@ class HTMLReporter(BaseReporter):
       white-space: pre-wrap;
       word-break: break-all;
     }}
-    .remediation-cmd {{
-      background: #0d1117;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px 14px;
-      margin-top: 12px;
-      font-family: monospace;
-      font-size: 12px;
-      color: #79c0ff;
-    }}
     .doc-link {{
       display: inline-block;
       margin-top: 10px;
@@ -526,14 +515,6 @@ class HTMLReporter(BaseReporter):
             </div>
             """
 
-        cmd_block = ""
-        if r.remediation_command:
-            cmd_block = f"""
-            <div class="remediation-cmd">
-              <strong>CLI Remediation:</strong> <code>{html.escape(r.remediation_command)}</code>
-            </div>
-            """
-
         doc_link = ""
         if r.documentation_url:
             doc_link = f"""<a class="doc-link" href="{html.escape(r.documentation_url)}" target="_blank" rel="noopener noreferrer">View Official GitHub Documentation &rarr;</a>"""
@@ -561,7 +542,6 @@ class HTMLReporter(BaseReporter):
             <strong>Recommended State:</strong> {html.escape(r.recommended_state)}
           </div>
           {diff_block}
-          {cmd_block}
           {doc_link}
         </div>
         """

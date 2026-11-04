@@ -19,7 +19,7 @@ DEFAULT_APP_CONFIG: Dict[str, Any] = {
         "retry_backoff_factor": 1.5,
     },
     "reporting": {
-        "output_directory": "./output",
+        "output_directory": "./repo360-output",
         "report_prefix": "repo360_audit",
         "generate_xlsx": True,
         "generate_csv": True,

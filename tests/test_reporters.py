@@ -51,6 +51,7 @@ def test_excel_reporter_generation(mock_results: list) -> None:
         assert ws_summary["B2"].value == "Repo360 Platform Governance & Intelligence Summary"
         # Check that AI KPI row exists
         metric_labels = [ws_summary.cell(row=r, column=2).value for r in range(5, 15)]
+        assert "Audit Execution Timestamp" in metric_labels
         assert "AI-Tailored Remediations Synthesized" in metric_labels
 
         # 2. Verify Dedicated AI Recommendations Sheet
@@ -62,6 +63,7 @@ def test_excel_reporter_generation(mock_results: list) -> None:
         assert "Recommendation Source" in ai_headers
         assert "AI-Synthesized Remediation Code / Config" in ai_headers
         assert "Target Configuration File" in ai_headers
+        assert "CLI Remediation Command" not in ai_headers
 
         # Check that rows were populated
         assert ws_ai.max_row >= 2
@@ -106,6 +108,7 @@ def test_csv_reporter_generation(mock_results: list) -> None:
         assert "detected_stack" in header_line
         assert "target_config_file" in header_line
         assert "remediation_code_after" in header_line
+        assert "remediation_command" not in header_line
 
         full_content = "".join(lines)
         assert "AI_TAILORED" in full_content
@@ -139,6 +142,8 @@ def test_html_reporter_generation(mock_results: list) -> None:
         assert "badge-ai" in content
         assert "diff-container" in content
         assert "AI-Synthesized Configuration" in content
+        assert "CLI Remediation" not in content
+        assert "Audit Run Generated:" in content
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)

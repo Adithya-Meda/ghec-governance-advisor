@@ -48,7 +48,7 @@ repo360 audit
 # Or filter to specific organizations
 repo360 audit --org OrgAlpha,OrgBeta
 ```
-*Audits all accessible repositories with live progress banners and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
+*Audits all accessible repositories with live progress banners and writes reports to `./repo360-output/` (`.html`, `.xlsx`, `.csv`).*
 
 #### 4. Help & Options
 ```bash
@@ -108,7 +108,7 @@ jobs:
         if: always()
         with:
           name: repo360-reports
-          path: output/
+          path: repo360-output/
 ```
 
 ---

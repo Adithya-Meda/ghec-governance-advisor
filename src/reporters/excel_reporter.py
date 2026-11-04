@@ -131,6 +131,7 @@ class ExcelReporter(BaseReporter):
         compliance_rate = (passed / max(total - skipped, 1)) * 100
 
         metrics = [
+            ("Audit Execution Timestamp", self.get_local_timestamp()),
             ("Total Findings Evaluated", total),
             ("Passed Checks (PASS)", passed),
             ("Warning Risks (WARN)", warned),
@@ -211,7 +212,6 @@ class ExcelReporter(BaseReporter):
             "Recommendation Source",
             "Target Configuration File",
             "AI-Synthesized Remediation Code / Config",
-            "CLI Remediation Command",
             "Why AI Recommends This",
             "Official Documentation URL",
         ]
@@ -242,7 +242,7 @@ class ExcelReporter(BaseReporter):
             )
             ws.cell(row=2, column=1).font = self.font_italic
             ws.cell(row=2, column=1).alignment = Alignment(horizontal="center", vertical="center")
-            ws.merge_cells("A2:M2")
+            ws.merge_cells("A2:L2")
         else:
             for row_idx, f in enumerate(ai_findings, start=2):
                 stack = f.extra_details.get("detected_stack") or ("Detected Framework" if not is_fallback else "General Platform")
@@ -262,7 +262,6 @@ class ExcelReporter(BaseReporter):
                     self.sanitize_spreadsheet_value(source_label),
                     self.sanitize_spreadsheet_value(target_file),
                     self.sanitize_spreadsheet_value(remediation_code),
-                    self.sanitize_spreadsheet_value(f.remediation_command),
                     self.sanitize_spreadsheet_value(f.explanation),
                     self.sanitize_spreadsheet_value(f.documentation_url),
                 ]
@@ -290,7 +289,7 @@ class ExcelReporter(BaseReporter):
         )
         c_safe.font = self.font_italic
         c_safe.alignment = Alignment(vertical="center")
-        ws.merge_cells(f"A{safety_row}:M{safety_row}")
+        ws.merge_cells(f"A{safety_row}:L{safety_row}")
         ws.row_dimensions[safety_row].height = 22
 
         self._auto_adjust_columns(ws)

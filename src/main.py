@@ -479,7 +479,7 @@ def _run_cli() -> int:
     parser.add_argument(
         "--output-dir",
         default="",
-        help="Directory where output reports will be saved (defaults to ./output).",
+        help="Directory where output reports will be saved (defaults to ./repo360-output).",
     )
     parser.add_argument(
         "--org",
@@ -526,7 +526,7 @@ def _run_cli() -> int:
         return 1
 
     # Determine output directory
-    output_dir = args.output_dir or app_config.get("reporting", {}).get("output_directory", "./output")
+    output_dir = args.output_dir or app_config.get("reporting", {}).get("output_directory", "./repo360-output")
     os.makedirs(output_dir, exist_ok=True)
 
     # Load credentials with priority: Environment Variables > Local .env > User Config (~/.repo360/config.json)

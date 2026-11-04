@@ -40,7 +40,6 @@ class CSVReporter(BaseReporter):
             "recommended_state",
             "remediation_code_after",
             "explanation",
-            "remediation_command",
             "documentation_url",
             "ai_safety_notice",
         ]
@@ -78,7 +77,6 @@ class CSVReporter(BaseReporter):
                     r.recommended_state,
                     remediation_code,
                     r.explanation,
-                    r.remediation_command,
                     r.documentation_url,
                     safety_notice,
                 ]

@@ -32,7 +32,7 @@ inputs:
   output_dir:
     description: "Directory to save generated Excel, CSV, and HTML reports"
     required: false
-    default: "./output"
+    default: "./repo360-output"
   gemini_api_key:
     description: "Optional Google Gemini API key for AI-tailored remediations"
     required: false

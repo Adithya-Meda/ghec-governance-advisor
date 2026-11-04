@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List
 
 from ..checks.base import CheckResult
@@ -21,6 +22,35 @@ class BaseReporter(ABC):
     ) -> str:
         """Generate report file and return the saved file path."""
         pass
+
+    @staticmethod
+    def get_local_timestamp() -> str:
+        """Return formatted local timestamp with smart timezone detection (e.g. 2026-11-04 16:22:00 IST)."""
+        now = datetime.now().astimezone()
+        tz_name = now.tzname() or "UTC"
+        tz_abbreviations = {
+            "India Standard Time": "IST",
+            "Pacific Standard Time": "PST",
+            "Pacific Daylight Time": "PDT",
+            "Eastern Standard Time": "EST",
+            "Eastern Daylight Time": "EDT",
+            "Central Standard Time": "CST",
+            "Central Daylight Time": "CDT",
+            "Mountain Standard Time": "MST",
+            "Mountain Daylight Time": "MDT",
+            "Greenwich Mean Time": "GMT",
+            "Coordinated Universal Time": "UTC",
+            "W. Europe Standard Time": "CET",
+            "Central Europe Standard Time": "CET",
+            "Romance Standard Time": "CET",
+            "GMT Standard Time": "GMT",
+            "Singapore Standard Time": "SGT",
+            "Tokyo Standard Time": "JST",
+            "China Standard Time": "CST",
+            "AUS Eastern Standard Time": "AEST",
+        }
+        tz_abbr = tz_abbreviations.get(tz_name, tz_name)
+        return f"{now.strftime('%Y-%m-%d %H:%M:%S')} {tz_abbr}"
 
     @staticmethod
     def sanitize_spreadsheet_value(value: object) -> object:
