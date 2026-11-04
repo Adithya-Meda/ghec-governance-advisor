@@ -149,6 +149,59 @@ def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
     return False, "Could not query remote GitHub repository."
 
 
+def _prepare_windows_binaries(scripts_dir: Path) -> List[Tuple[Path, Path]]:
+    """On Windows, running .exe files cannot be deleted or overwritten in-place.
+
+    Windows NT allows renaming running executables. Renaming existing entrypoints
+    to temporary names allows the package installer to write clean new .exe files.
+    """
+    renamed: List[Tuple[Path, Path]] = []
+    if sys.platform != "win32" or not scripts_dir.is_dir():
+        return renamed
+
+    # Clean up stale .old files from prior runs
+    for old_file in scripts_dir.glob("*.exe.old_*"):
+        try:
+            old_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    # Rename entrypoints to avoid OS error 5 / 32 during wheel extraction
+    pid = os.getpid()
+    for exe_name in ("repo360.exe", "repo360-audit.exe", "repo360-activity.exe", "repo360-runners.exe"):
+        exe_file = scripts_dir / exe_name
+        if exe_file.is_file():
+            staged = scripts_dir / f"{exe_name}.old_{pid}"
+            try:
+                exe_file.rename(staged)
+                renamed.append((exe_file, staged))
+            except OSError as exc:
+                logger.debug("Could not stage rename for %s: %s", exe_file, exc)
+
+    return renamed
+
+
+def _restore_windows_binaries(renamed: List[Tuple[Path, Path]], success: bool) -> None:
+    """Restore original executables if upgrade failed, or attempt removal of staged files."""
+    if sys.platform != "win32":
+        return
+
+    for original, staged in renamed:
+        if not success:
+            if not original.is_file() and staged.is_file():
+                try:
+                    staged.rename(original)
+                except OSError:
+                    pass
+        else:
+            if staged.is_file():
+                try:
+                    staged.unlink(missing_ok=True)
+                except OSError:
+                    # Windows holds running exe lock until process exits; cleaned up on next run
+                    pass
+
+
 def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = False) -> int:
     """Execute the upgrade process via subprocess with resilient fallback across strategies."""
     if dry_run:
@@ -156,16 +209,26 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
         print(f"\n\033[96m[DRY-RUN]\033[0m Would execute upgrade ({chosen[0]}):\n  {' '.join(chosen[1])}\n")
         return 0
 
+    scripts_dir = Path(sys.executable).parent
+    renamed = _prepare_windows_binaries(scripts_dir)
+
+    success = False
     last_error: Optional[str] = None
     for strategy_name, cmd in candidates:
         logger.debug("Executing upgrade via %s: %s", strategy_name, " ".join(cmd))
         try:
             result = subprocess.run(cmd, check=False)
             if result.returncode == 0:
-                return 0
+                success = True
+                break
             last_error = f"Strategy '{strategy_name}' exited with code {result.returncode}"
         except Exception as exc:
             last_error = f"Strategy '{strategy_name}' execution failed: {exc}"
+
+    _restore_windows_binaries(renamed, success=success)
+
+    if success:
+        return 0
 
     print(f"\n\033[91m[FAIL]\033[0m Upgrade failed: {last_error}\n")
     return 1

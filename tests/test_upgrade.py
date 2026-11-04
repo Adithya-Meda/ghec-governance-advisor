@@ -109,3 +109,30 @@ def test_verify_local_state(capsys, tmp_path):
             assert "[VERIFY]" in captured.out
             assert "Configuration file" in captured.out
             assert "1 private key(s) detected" in captured.out
+
+
+def test_prepare_and_restore_windows_binaries(tmp_path):
+    from src.upgrade import _prepare_windows_binaries, _restore_windows_binaries
+
+    exe = tmp_path / "repo360.exe"
+    exe.write_text("mock binary", encoding="utf-8")
+
+    with patch("sys.platform", "win32"):
+        renamed = _prepare_windows_binaries(tmp_path)
+        assert len(renamed) == 1
+        assert not exe.is_file()
+        staged = renamed[0][1]
+        assert staged.is_file()
+
+        # Test failure restore
+        _restore_windows_binaries(renamed, success=False)
+        assert exe.is_file()
+        assert not staged.is_file()
+
+        # Test success cleanup
+        renamed = _prepare_windows_binaries(tmp_path)
+        assert len(renamed) == 1
+        staged = renamed[0][1]
+        assert staged.is_file()
+        _restore_windows_binaries(renamed, success=True)
+        assert not staged.is_file()
