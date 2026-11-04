@@ -1,11 +1,37 @@
-"""End-to-end integration test simulating audit execution."""
+"""End-to-end integration tests for Repo360 CLI execution."""
 
 import os
+import sys
 import tempfile
 from unittest.mock import patch
-import pytest
 
-from src.main import main
+from src.main import main, run_audit_cli
+
+
+def test_bare_repo360_shows_help_without_executing_audit(capsys) -> None:
+    """Verify that bare 'repo360' prints available commands and does NOT execute any audit."""
+    with patch("sys.argv", ["repo360"]):
+        with patch("src.main._run_cli") as mock_run:
+            exit_code = main()
+            assert exit_code == 0
+            mock_run.assert_not_called()
+
+    captured = capsys.readouterr()
+    assert "Usage:" in captured.out
+    assert "audit" in captured.out
+    assert "setup" in captured.out
+
+
+def test_unknown_subcommand_returns_error(capsys) -> None:
+    """Verify that an invalid subcommand prints an error message and exits with code 1."""
+    with patch("sys.argv", ["repo360", "invalid-cmd"]):
+        with patch("src.main._run_cli") as mock_run:
+            exit_code = main()
+            assert exit_code == 1
+            mock_run.assert_not_called()
+
+    captured = capsys.readouterr()
+    assert "Error: Unknown command 'invalid-cmd'" in captured.out
 
 
 def test_main_mock_mode_execution() -> None:
@@ -16,7 +42,8 @@ def test_main_mock_mode_execution() -> None:
             f.write('{"enabled_checks": {"org_admin": {"rulesets_adoption": true}}}')
 
         test_args = [
-            "src.main",
+            "repo360",
+            "audit",
             "--advisory-config",
             custom_advisory,
             "--output-dir",
@@ -37,15 +64,15 @@ def test_main_mock_mode_execution() -> None:
 
 
 def test_main_zero_config_execution() -> None:
-    """Verify that ghec-advisor runs with zero configuration files (pure built-in defaults)."""
+    """Verify that repo360 audit runs with zero configuration files (pure built-in defaults)."""
     with tempfile.TemporaryDirectory() as temp_work_dir:
-        # Run inside an empty directory without any config/ or repos.csv
         old_cwd = os.getcwd()
         os.chdir(temp_work_dir)
         try:
             output_dir = os.path.join(temp_work_dir, "output")
             test_args = [
-                "src.main",
+                "repo360",
+                "audit",
                 "--output-dir",
                 output_dir,
                 "--mock-mode",
@@ -67,11 +94,9 @@ def test_main_zero_config_execution() -> None:
 
 def test_main_keyboard_interrupt_clean_exit() -> None:
     """Verify that Ctrl+C in CLI exits cleanly with code 130 without unhandled exception."""
-    test_args = ["src.main", "--mock-mode"]
+    test_args = ["repo360", "audit", "--mock-mode"]
 
     with patch("sys.argv", test_args):
         with patch("src.main._run_cli", side_effect=KeyboardInterrupt):
             exit_code = main()
             assert exit_code == 130
-
-

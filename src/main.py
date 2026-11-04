@@ -372,27 +372,54 @@ Run 'repo360 <command> --help' for details on a specific command (e.g. 'repo360 
 
 
 def main() -> int:
-    """CLI entrypoint with clean Ctrl+C interruption and subcommand routing."""
-    import sys
-    if len(sys.argv) > 1:
-        subcmd = sys.argv[1].lower()
-        if subcmd in ("setup", "install-app"):
-            sys.argv.pop(1)
-            from .setup_app import main as setup_main
-            return setup_main()
-        elif subcmd in ("activity", "users"):
-            print("\n[Repo360] 'activity' command is scheduled on the Repo360 roadmap.")
-            print("  Coming soon: contributor cadence, seat tracking, and audit log analysis.\n")
-            return 0
-        elif subcmd in ("runners", "metrics"):
-            print("\n[Repo360] 'runners' command is scheduled on the Repo360 roadmap.")
-            print("  Coming soon: runner fleet utilization, queue wait times, and concurrency metrics.\n")
-            return 0
-        elif subcmd == "audit":
-            sys.argv.pop(1)
-        elif subcmd in ("-h", "--help") and len(sys.argv) == 2:
-            return _print_root_help()
+    """CLI entrypoint with strict subcommand routing.
 
+    Running bare 'repo360' prints available commands and does NOT invoke any operation.
+    """
+    import sys
+
+    # 1. Bare invocation: 'repo360' with no arguments displays help
+    if len(sys.argv) <= 1:
+        return _print_root_help()
+
+    subcmd = sys.argv[1].lower()
+
+    # 2. Root help flags
+    if subcmd in ("-h", "--help"):
+        return _print_root_help()
+
+    # 3. Route recognized subcommands
+    if subcmd == "audit":
+        sys.argv.pop(1)
+        try:
+            return _run_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            _print_failure_banner("Audit cancelled by user (Ctrl+C). No final reports generated.")
+            return 130
+
+    if subcmd in ("setup", "install-app"):
+        sys.argv.pop(1)
+        from .setup_app import main as setup_main
+        return setup_main()
+
+    if subcmd in ("activity", "users"):
+        print("\n[Repo360] 'activity' command is scheduled on the Repo360 roadmap.")
+        print("  Coming soon: contributor cadence, seat tracking, and audit log analysis.\n")
+        return 0
+
+    if subcmd in ("runners", "metrics"):
+        print("\n[Repo360] 'runners' command is scheduled on the Repo360 roadmap.")
+        print("  Coming soon: runner fleet utilization, queue wait times, and concurrency metrics.\n")
+        return 0
+
+    # 4. Unknown subcommand or misplaced option
+    print(f"Error: Unknown command '{sys.argv[1]}'. Run 'repo360 --help' for available commands.\n")
+    return 1
+
+
+def run_audit_cli() -> int:
+    """Dedicated entrypoint for repo360-audit standalone shortcut."""
     try:
         return _run_cli()
     except KeyboardInterrupt:
