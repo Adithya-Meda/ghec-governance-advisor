@@ -139,8 +139,7 @@ class GitHubAppAuth:
             if server_date:
                 server_timestamp = email.utils.parsedate_to_datetime(server_date).timestamp()
                 skew = time.time() - server_timestamp
-                if abs(skew) > 15:
-                    logger.info("Adjusted for local clock skew relative to GitHub: %.1f seconds", skew)
+                logger.debug("Adjusted for local clock skew relative to GitHub: %.1f seconds", skew)
                 return skew
         except Exception as err:
             logger.debug("Could not determine GitHub server clock skew: %s", err)
