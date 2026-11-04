@@ -39,6 +39,7 @@ def test_excel_reporter_generation(mock_results: list) -> None:
         wb = openpyxl.load_workbook(saved_path)
         expected_sheets = {
             "Executive_Summary",
+            "Fleet_Playbook",
             "AI_Recommendations",
             "Org_Admin_Findings",
             "Repo_Admin_Findings",
@@ -54,7 +55,17 @@ def test_excel_reporter_generation(mock_results: list) -> None:
         assert "Audit Execution Timestamp" in metric_labels
         assert "AI-Tailored Remediations Synthesized" in metric_labels
 
-        # 2. Verify Dedicated AI Recommendations Sheet
+        # 2. Verify Consolidated Fleet Playbook Sheet
+        ws_playbook = wb["Fleet_Playbook"]
+        playbook_headers = [cell.value for cell in ws_playbook[1]]
+        assert "Category" in playbook_headers
+        assert "Remediation Pattern / Check Name" in playbook_headers
+        assert "Affected Repos Count" in playbook_headers
+        assert "Affected Repositories List" in playbook_headers
+        assert "Canonical Recommended Configuration / Code" in playbook_headers
+        assert ws_playbook.max_row >= 2
+
+        # 3. Verify Dedicated AI Recommendations Sheet
         ws_ai = wb["AI_Recommendations"]
         ai_headers = [cell.value for cell in ws_ai[1]]
         assert "Repository" in ai_headers
@@ -106,6 +117,7 @@ def test_csv_reporter_generation(mock_results: list) -> None:
         assert "recommendation_source" in header_line
         assert "ai_enriched" in header_line
         assert "detected_stack" in header_line
+        assert "remediation_cluster_key" in header_line
         assert "target_config_file" in header_line
         assert "remediation_code_after" in header_line
         assert "remediation_command" not in header_line
@@ -135,6 +147,12 @@ def test_html_reporter_generation(mock_results: list) -> None:
         assert "Repo360 Platform Governance & Intelligence Report" in content or "Repo360" in content
         assert "Compliance Score" in content
         assert "AI Remediations" in content
+        assert "Consolidated Fleet Playbook" in content
+        assert "Repository Drill-Down" in content
+        assert "playbook-view-container" in content
+        assert "repo-view-container" in content
+        assert "repo-chip" in content
+        assert "Affected Fleet Scope:" in content
         assert "AI Tailored Only" in content
         assert "Standard Rules Only" in content
         assert 'data-source="ai"' in content

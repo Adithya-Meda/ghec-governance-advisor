@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
+from typing import Any, Dict, List
 
 from ..checks.base import CheckResult
 
@@ -99,4 +99,58 @@ class BaseReporter(ABC):
             "runner_groups_isolation": "Actions Runner Groups (Settings)",
         }
         return file_map.get(check_id, "Repository / Organization Config")
+
+    @classmethod
+    def build_remediation_clusters(cls, results: List[CheckResult]) -> List[Dict[str, Any]]:
+        """Cluster actionable WARN/FAIL findings by check and tech stack for consolidated fleet playbooks."""
+        from ..checks.base import CheckStatus
+
+        clusters: Dict[str, Dict[str, Any]] = {}
+
+        for r in results:
+            if r.status not in (CheckStatus.WARN, CheckStatus.FAIL):
+                continue
+
+            stack = r.extra_details.get("detected_stack") or ""
+            cluster_key = f"{r.check_id}:{stack}" if stack else r.check_id
+
+            if cluster_key not in clusters:
+                remediation_code = r.remediation_snippet_after or r.recommended_state
+                clusters[cluster_key] = {
+                    "cluster_key": cluster_key,
+                    "check_id": r.check_id,
+                    "check_name": r.check_name,
+                    "category": r.category,
+                    "severity": r.severity,
+                    "persona": r.persona,
+                    "detected_stack": stack or "General Platform",
+                    "target_file": cls.infer_target_file(r.check_id),
+                    "current_state": r.current_state,
+                    "recommended_state": r.recommended_state,
+                    "remediation_code": remediation_code,
+                    "remediation_snippet_before": r.remediation_snippet_before,
+                    "explanation": r.explanation,
+                    "documentation_url": r.documentation_url,
+                    "is_ai": cls.is_ai_result(r),
+                    "ai_model": r.extra_details.get("ai_model", ""),
+                    "affected_repos": [],
+                }
+
+            repo_label = r.repo_name if r.repo_name != "Organization-Wide" else f"{r.org_name} (Org-Wide)"
+            if repo_label not in clusters[cluster_key]["affected_repos"]:
+                clusters[cluster_key]["affected_repos"].append(repo_label)
+
+        severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+        cluster_list = list(clusters.values())
+        for c in cluster_list:
+            c["affected_count"] = len(c["affected_repos"])
+            c["affected_repos"].sort()
+
+        cluster_list.sort(
+            key=lambda x: (
+                severity_order.get(x["severity"].value, 99),
+                -x["affected_count"],
+            )
+        )
+        return cluster_list
 

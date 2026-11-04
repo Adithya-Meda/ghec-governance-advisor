@@ -35,6 +35,7 @@ class CSVReporter(BaseReporter):
             "recommendation_source",
             "ai_enriched",
             "detected_stack",
+            "remediation_cluster_key",
             "target_config_file",
             "current_state",
             "recommended_state",
@@ -57,6 +58,7 @@ class CSVReporter(BaseReporter):
                     else ""
                 )
                 detected_stack = r.extra_details.get("detected_stack", "")
+                cluster_key = f"{r.check_id}:{detected_stack}" if detected_stack else r.check_id
                 target_file = self.infer_target_file(r.check_id)
                 remediation_code = r.remediation_snippet_after or r.recommended_state
 
@@ -72,6 +74,7 @@ class CSVReporter(BaseReporter):
                     rec_source,
                     ai_enriched_str,
                     detected_stack,
+                    cluster_key,
                     target_file,
                     r.current_state,
                     r.recommended_state,

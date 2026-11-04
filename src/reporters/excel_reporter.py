@@ -79,11 +79,15 @@ class ExcelReporter(BaseReporter):
         ws_summary.title = "Executive_Summary"
         self._build_summary_sheet(ws_summary, results, executive_summary, model_name=model_name)
 
-        # 2. Dedicated AI Recommendations Sheet (Positioned right after summary for prominence)
+        # 2. Consolidated Fleet Playbook (Aggregates identical remediations across the fleet)
+        ws_playbook = wb.create_sheet(title="Fleet_Playbook")
+        self._build_fleet_playbook_sheet(ws_playbook, results)
+
+        # 3. Dedicated AI Recommendations Sheet (Positioned right after summary for prominence)
         ws_ai = wb.create_sheet(title="AI_Recommendations")
         self._build_ai_recommendations_sheet(ws_ai, results)
 
-        # 3. Org Admin Sheet
+        # 4. Org Admin Sheet
         ws_org = wb.create_sheet(title="Org_Admin_Findings")
         self._build_findings_sheet(
             ws_org,
@@ -91,7 +95,7 @@ class ExcelReporter(BaseReporter):
             is_org=True,
         )
 
-        # 4. Repo Admin Sheet
+        # 5. Repo Admin Sheet
         ws_repo = wb.create_sheet(title="Repo_Admin_Findings")
         self._build_findings_sheet(
             ws_repo,
@@ -99,7 +103,7 @@ class ExcelReporter(BaseReporter):
             is_org=False,
         )
 
-        # 5. Contributor Sheet
+        # 6. Contributor Sheet
         ws_contrib = wb.create_sheet(title="Contributor_Findings")
         self._build_findings_sheet(
             ws_contrib,
@@ -224,6 +228,72 @@ class ExcelReporter(BaseReporter):
         for col_char in ("D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"):
             if ws.column_dimensions[col_char].width < 13:
                 ws.column_dimensions[col_char].width = 13
+
+    def _build_fleet_playbook_sheet(self, ws, results: List[CheckResult]) -> None:
+        """Build consolidated fleet-wide playbook grouping common remediations across repositories."""
+        ws.views.sheetView[0].showGridLines = True
+        ws.freeze_panes = "A2"
+        ws.row_dimensions[1].height = 26
+
+        headers = [
+            "Category",
+            "Remediation Pattern / Check Name",
+            "Severity",
+            "Detected Tech Stack",
+            "Target Configuration File",
+            "Affected Repos Count",
+            "Affected Repositories List",
+            "Canonical Recommended Configuration / Code",
+            "Official Documentation URL",
+        ]
+
+        for col_idx, h in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=h)
+            cell.font = self.font_header
+            cell.fill = self.fill_header
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        clusters = self.build_remediation_clusters(results)
+
+        if not clusters:
+            ws.cell(
+                row=2,
+                column=1,
+                value="All evaluated repositories met compliance standards. No fleet remediations required.",
+            )
+            ws.cell(row=2, column=1).font = self.font_italic
+            ws.cell(row=2, column=1).alignment = Alignment(horizontal="center", vertical="center")
+            ws.merge_cells("A2:I2")
+        else:
+            for row_idx, c in enumerate(clusters, start=2):
+                repos_str = ", ".join(c["affected_repos"])
+                values = [
+                    self.sanitize_spreadsheet_value(c["category"]),
+                    self.sanitize_spreadsheet_value(c["check_name"]),
+                    c["severity"].value,
+                    self.sanitize_spreadsheet_value(c["detected_stack"]),
+                    self.sanitize_spreadsheet_value(c["target_file"]),
+                    f"{c['affected_count']} repo(s)",
+                    self.sanitize_spreadsheet_value(repos_str),
+                    self.sanitize_spreadsheet_value(c["remediation_code"]),
+                    self.sanitize_spreadsheet_value(c["documentation_url"]),
+                ]
+
+                for col_idx, val in enumerate(values, start=1):
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.font = self.font_data
+                    cell.border = self.border_cell
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+                    if col_idx == 3:  # Severity column
+                        cell.alignment = Alignment(horizontal="center", vertical="top")
+                    elif col_idx == 6:  # Affected Repos Count
+                        cell.alignment = Alignment(horizontal="center", vertical="top")
+                        cell.font = self.font_bold
+                    elif col_idx == 8:  # Code block
+                        cell.font = self.font_code
+
+        self._auto_adjust_columns(ws)
 
     def _build_ai_recommendations_sheet(self, ws, results: List[CheckResult]) -> None:
         """Build dedicated worksheet spotlighting all AI-synthesized remediations."""
