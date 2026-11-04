@@ -77,32 +77,18 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Weekly: Mondays at 06:00 UTC
 
-permissions:
-  contents: read
-
 jobs:
   governance-audit:
     name: "Execute Advisory Audit"
     runs-on: ubuntu-latest
 
     steps:
-      - name: "Checkout Repository"
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
       - name: "Run Repo360 Action"
-        uses: Adithya-Meda/repo360@7c8dc5f3653b6f8a07bdfa65606db7df1296c271 # main
+        uses: Adithya-Meda/repo360@main
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
           ai_api_key: ${{ secrets.AI_API_KEY }}
-
-      - name: "Publish Audit Reports Artifact"
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: repo360-audit-reports
-          path: repo360-output/
-          retention-days: 60
 ```
 
 ---

@@ -33,6 +33,18 @@ inputs:
     description: "Directory to save generated Excel, CSV, and HTML reports"
     required: false
     default: "./repo360-output"
+  upload_artifact:
+    description: "Automatically upload generated reports (.xlsx, .csv, .html) as a workflow artifact"
+    required: false
+    default: "true"
+  artifact_name:
+    description: "Name of the uploaded workflow artifact"
+    required: false
+    default: "repo360-audit-reports"
+  artifact_retention_days:
+    description: "Duration (in days) to retain the uploaded artifact"
+    required: false
+    default: "60"
   ai_api_key:
     description: "Unified AI API key for any provider (Google Gemini, OpenAI, Anthropic)"
     required: false
@@ -103,3 +115,12 @@ runs:
           CMD="$CMD --inventory ${{ inputs.inventory }}"
         fi
         eval $CMD
+
+    - name: "Publish Audit Reports Artifact"
+      if: always() && inputs.upload_artifact == 'true'
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: ${{ inputs.output_dir }}
+        retention-days: ${{ inputs.artifact_retention_days }}
+        if-no-files-found: ignore
