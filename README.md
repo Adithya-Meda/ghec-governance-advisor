@@ -31,9 +31,9 @@
 
 No cloning, `.env`, or manual configuration files required.
 
-#### 1. Install (or Upgrade)
+#### 1. Install
 ```bash
-pipx install --force git+https://github.com/Adithya-Meda/repo360.git
+pipx install git+https://github.com/Adithya-Meda/repo360.git
 ```
 
 #### 2. Setup (One-Time)
