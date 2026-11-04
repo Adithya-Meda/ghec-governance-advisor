@@ -28,6 +28,10 @@ def test_get_manifest_payload() -> None:
     assert manifest["default_permissions"]["actions"] == "read"
     assert manifest["default_permissions"]["contents"] == "read"
     assert manifest["default_permissions"]["secret_scanning_alerts"] == "read"
+    assert manifest["default_permissions"]["pull_requests"] == "read"
+    assert manifest["default_permissions"]["issues"] == "read"
+    assert manifest["default_permissions"]["members"] == "read"
+    assert manifest["default_permissions"]["organization_self_hosted_runners"] == "read"
 
 
 def test_manifest_callback_handler_redirect_form() -> None:

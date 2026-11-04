@@ -53,3 +53,41 @@ def test_load_flexible_inventory_no_enabled(tmp_path):
 
     with pytest.raises(ValueError, match="contains no enabled repositories"):
         load_flexible_repo_entries(csv_file)
+
+
+def test_discover_app_repositories_direct():
+    from unittest.mock import MagicMock
+    from src.common.inventory import discover_app_repositories
+
+    mock_auth = MagicMock()
+    mock_auth.discover_installations.return_value = [
+        {"id": 101, "account": {"login": "fintech-core"}},
+        {"id": 102, "account": {"login": "data-platform"}},
+    ]
+
+    mock_client = MagicMock()
+    mock_client.paginate_enveloped.side_effect = lambda org, endpoint, key: [
+        {"name": f"{org}-repo-1", "archived": False, "fork": False},
+        {"name": f"{org}-repo-2", "archived": True, "fork": False},
+    ]
+
+    # Without filter, exclude archived
+    targets, meta = discover_app_repositories(
+        auth=mock_auth,
+        client=mock_client,
+        include_archived=False,
+    )
+    assert len(targets) == 2
+    assert ("fintech-core", "fintech-core-repo-1") in targets
+    assert ("data-platform", "data-platform-repo-1") in targets
+
+    # With org filter
+    targets_filtered, _ = discover_app_repositories(
+        auth=mock_auth,
+        client=mock_client,
+        org_filter=["fintech-core"],
+        include_archived=True,
+    )
+    assert len(targets_filtered) == 2
+    assert ("fintech-core", "fintech-core-repo-1") in targets_filtered
+    assert ("fintech-core", "fintech-core-repo-2") in targets_filtered

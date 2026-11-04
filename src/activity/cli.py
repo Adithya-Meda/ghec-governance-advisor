@@ -14,14 +14,13 @@ from typing import Dict, List, Optional, Tuple
 
 from ..auth.github_app_auth import GitHubAppAuth
 from ..common.client import ResilientGitHubClient
-from ..common.inventory import RepoEntry, load_flexible_repo_entries
+from ..common.inventory import RepoEntry, discover_app_repositories, load_flexible_repo_entries
 from ..credentials import resolve_runtime_credentials
 from .collector import (
     build_org_rows,
     build_rows,
     collect_repository,
     fetch_members,
-    fetch_org_custom_properties,
     fetch_team_access,
     resolve_activity_targets,
 )
@@ -84,9 +83,14 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
         description="Analyze contributor cadence, active days, seat allocation, and commit/PR metrics.",
     )
     parser.add_argument(
+        "--org",
+        default="",
+        help="Optional comma-separated list of organizations to analyze. If omitted, all installed organizations are analyzed.",
+    )
+    parser.add_argument(
         "--repos",
-        default="repos.csv",
-        help="Path to repository inventory CSV (default: repos.csv).",
+        default="",
+        help="Optional path to custom repository inventory CSV. If omitted, all accessible repositories are auto-discovered from the GitHub App.",
     )
     parser.add_argument(
         "--output-dir",
@@ -147,19 +151,6 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
         print("Run 'repo360 setup' or configure REPO360_APP_ID and REPO360_APP_PRIVATE_KEY.\n")
         return 1
 
-    # 2. Parse Repository Inventory
-    repos_path = os.path.abspath(args.repos)
-    if not os.path.isfile(repos_path):
-        print(f"\n\033[91m[FAIL] Repository inventory file not found: {repos_path}\033[0m")
-        print("Create a repos.csv with 'org,repo,enabled' or specify --repos <path>.\n")
-        return 1
-
-    try:
-        entries = load_flexible_repo_entries(repos_path)
-    except Exception as exc:
-        print(f"\n\033[91m[FAIL] Invalid inventory CSV: {exc}\033[0m\n")
-        return 1
-
     cfg = ActivityConfig(
         lookback_days=args.lookback_days,
         active_min_days=args.active_min_days,
@@ -181,8 +172,34 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     since = end - timedelta(days=cfg.lookback_days)
     stamp = end.strftime("%Y%m%d_%H%M%S")
 
-    print(f"\033[96m[INFO]\033[0m Resolving target repositories from {repos_path}...")
-    targets, failures, metadata_cache = resolve_activity_targets(client, entries, cfg)
+    # 2. Resolve Repositories (Auto-discovery directly from GitHub App by default)
+    targets: List[Tuple[str, str]] = []
+    failures: List[Tuple[str, str]] = []
+    metadata_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    if args.repos:
+        repos_path = os.path.abspath(args.repos)
+        if not os.path.isfile(repos_path):
+            print(f"\n\033[91m[FAIL] Repository inventory file not found: {repos_path}\033[0m\n")
+            return 1
+        try:
+            entries = load_flexible_repo_entries(repos_path)
+        except Exception as exc:
+            print(f"\n\033[91m[FAIL] Invalid inventory CSV: {exc}\033[0m\n")
+            return 1
+        print(f"\033[96m[INFO]\033[0m Resolving target repositories from {repos_path}...")
+        targets, failures, metadata_cache = resolve_activity_targets(client, entries, cfg)
+    else:
+        org_filter = [o.strip() for o in args.org.split(",") if o.strip()] if args.org else None
+        print(f"\033[96m[INFO]\033[0m Auto-discovering repositories directly from GitHub App installations...")
+        targets, metadata_cache = discover_app_repositories(
+            auth=auth,
+            client=client,
+            org_filter=org_filter,
+            include_archived=cfg.include_archived,
+            include_forks=cfg.include_forks,
+        )
+
     if not targets:
         print("\033[91m[FAIL] No repositories discovered or accessible to analyze.\033[0m\n")
         return 1
@@ -190,7 +207,6 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     orgs = sorted({org for org, _ in targets}, key=str.lower)
     print(f"\033[96m[INFO]\033[0m Scanning {len(targets)} repositories across {len(orgs)} organization(s)...")
 
-    org_custom_props = fetch_org_custom_properties(client, orgs)
     reports: Dict[Tuple[str, str], RepositoryReport] = {}
 
     with ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="activity-worker") as pool:
@@ -204,7 +220,6 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
                 end,
                 cfg.exclude_bots,
                 metadata_cache.get((org.casefold(), repo.casefold())),
-                org_custom_props.get((org.casefold(), repo.casefold())),
             ): (org, repo)
             for org, repo in targets
         }

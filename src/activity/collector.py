@@ -87,22 +87,6 @@ def resolve_activity_targets(
     return targets, failures, metadata_cache
 
 
-def fetch_org_custom_properties(
-    client: ResilientGitHubClient, orgs: List[str]
-) -> Dict[Tuple[str, str], Any]:
-    """Fetch repository custom property values in bulk per organization."""
-    props: Dict[Tuple[str, str], Any] = {}
-    for org in orgs:
-        try:
-            for item in client.paginate(org, f"/orgs/{org}/properties/values"):
-                repo_name = item.get("repository_name")
-                if repo_name and "properties" in item:
-                    props[(org.casefold(), repo_name.casefold())] = item["properties"]
-        except Exception as exc:
-            logger.debug("Org custom properties bulk retrieval unavailable for %s: %s", org, exc)
-    return props
-
-
 def collect_pull_requests_graphql(
     client: ResilientGitHubClient,
     org: str,
@@ -320,7 +304,6 @@ def collect_repository(
     end: datetime,
     exclude_bots: bool,
     cached_metadata: Optional[Dict[str, Any]] = None,
-    cached_properties: Optional[Any] = None,
 ) -> RepositoryReport:
     """Perform complete activity inspection and governance audit for a repository."""
     report = RepositoryReport()

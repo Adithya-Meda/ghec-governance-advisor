@@ -130,6 +130,9 @@ runs:
 
         if [ "${{ inputs.collect_activity }}" = "true" ]; then
           ACT_CMD="repo360 activity --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.org }}" ]; then
+            ACT_CMD="$ACT_CMD --org ${{ inputs.org }}"
+          fi
           if [ -n "${{ inputs.inventory }}" ]; then
             ACT_CMD="$ACT_CMD --repos ${{ inputs.inventory }}"
           fi
@@ -138,6 +141,9 @@ runs:
 
         if [ "${{ inputs.collect_runners }}" = "true" ]; then
           RUN_CMD="repo360 runners --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.org }}" ]; then
+            RUN_CMD="$RUN_CMD --org ${{ inputs.org }}"
+          fi
           if [ -n "${{ inputs.inventory }}" ]; then
             RUN_CMD="$RUN_CMD --repos ${{ inputs.inventory }}"
           fi

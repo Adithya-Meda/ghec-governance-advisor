@@ -118,3 +118,74 @@ def load_flexible_repo_entries(path: str | os.PathLike) -> List[RepoEntry]:
         raise ValueError(f"{os.path.basename(file_path)} contains no enabled repositories to scan.")
 
     return entries
+
+
+def discover_app_repositories(
+    auth: Any,
+    client: Any,
+    org_filter: Optional[List[str]] = None,
+    include_archived: bool = False,
+    include_forks: bool = True,
+) -> Tuple[List[Tuple[str, str]], Dict[Tuple[str, str], Dict[str, Any]]]:
+    """Auto-discover all repositories directly accessible to the GitHub App across installed organizations.
+
+    Eliminates the requirement for a repos.csv file by querying GitHub App installations and
+    retrieving accessible repositories directly via the GitHub API.
+
+    Args:
+        auth: GitHubAppAuth instance with credentials.
+        client: ResilientGitHubClient instance.
+        org_filter: Optional list of organization names to restrict discovery to.
+        include_archived: Whether to include archived repositories.
+        include_forks: Whether to include forked repositories.
+
+    Returns:
+        Tuple of (targets_list, metadata_cache_dict).
+    """
+    targets: List[Tuple[str, str]] = []
+    metadata_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    installations = auth.discover_installations()
+    if not installations:
+        return targets, metadata_cache
+
+    org_set = {o.strip().lower() for o in org_filter if o.strip()} if org_filter else None
+
+    for inst in installations:
+        org_login = inst.get("account", {}).get("login", "")
+        if not org_login:
+            continue
+        if org_set and org_login.lower() not in org_set:
+            continue
+
+        try:
+            # Query accessible repositories for this installation directly from GitHub API
+            for repo_data in client.paginate_enveloped(org_login, "/installation/repositories", "repositories"):
+                repo_name = repo_data.get("name")
+                if not repo_name:
+                    continue
+                if repo_data.get("archived") and not include_archived:
+                    continue
+                if repo_data.get("fork") and not include_forks:
+                    continue
+
+                targets.append((org_login, repo_name))
+                metadata_cache[(org_login.casefold(), repo_name.casefold())] = repo_data
+        except Exception:
+            # Fallback to org repos endpoint if installation endpoint encounters issue
+            try:
+                for repo_data in client.paginate(org_login, f"/orgs/{org_login}/repos", {"type": "all"}):
+                    repo_name = repo_data.get("name")
+                    if not repo_name:
+                        continue
+                    if repo_data.get("archived") and not include_archived:
+                        continue
+                    if repo_data.get("fork") and not include_forks:
+                        continue
+
+                    targets.append((org_login, repo_name))
+                    metadata_cache[(org_login.casefold(), repo_name.casefold())] = repo_data
+            except Exception:
+                pass
+
+    return targets, metadata_cache
