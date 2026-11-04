@@ -92,20 +92,95 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
             )
 
             html_page = f"""<!DOCTYPE html>
-            <html>
-            <head><title>Connecting to GitHub...</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-              <h2>Redirecting to GitHub to create your App...</h2>
-              <p>Please click the button below if you are not redirected automatically.</p>
-              <form id="manifestForm" method="post" action="{html.escape(form_action)}">
-                <input type="hidden" name="manifest" value='{html.escape(manifest_json)}'>
-                <button type="submit" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">
-                  Continue to GitHub
-                </button>
-              </form>
-              <script>document.getElementById('manifestForm').submit();</script>
-            </body>
-            </html>"""
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connecting to GitHub - Repo360</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background-color: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }}
+    .card {{
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      max-width: 520px;
+      width: 100%;
+      padding: 44px 32px;
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(1, 4, 9, 0.6);
+    }}
+    .spinner {{
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(88, 166, 255, 0.15);
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 24px auto;
+    }}
+    @keyframes spin {{
+      to {{ transform: rotate(360deg); }}
+    }}
+    h1 {{
+      color: #3fb950;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-bottom: 12px;
+    }}
+    p.desc {{
+      color: #c9d1d9;
+      font-size: 16px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }}
+    p.hint {{
+      color: #8b949e;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }}
+    .btn {{
+      display: inline-block;
+      background-color: #238636;
+      color: #ffffff;
+      border: 1px solid rgba(240, 246, 252, 0.1);
+      border-radius: 6px;
+      padding: 10px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+    }}
+    .btn:hover {{
+      background-color: #2ea043;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>Connecting to GitHub...</h1>
+    <p class="desc">Redirecting to authorize and register the Repo360 GitHub App.</p>
+    <p class="hint">Click the button below if you are not redirected automatically.</p>
+    <form id="manifestForm" method="post" action="{html.escape(form_action)}">
+      <input type="hidden" name="manifest" value='{html.escape(manifest_json)}'>
+      <button type="submit" class="btn">Continue to GitHub</button>
+    </form>
+  </div>
+  <script>document.getElementById('manifestForm').submit();</script>
+</body>
+</html>"""
 
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -137,13 +212,71 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
                 ManifestCallbackHandler.conversion_result = resp.json()
 
                 success_html = """<!DOCTYPE html>
-                <html>
-                <body style="font-family: sans-serif; text-align: center; padding: 60px; background: #0d1117; color: #58a6ff;">
-                  <h1 style="color: #3fb950;">GitHub App Created Successfully!</h1>
-                  <p style="color: #c9d1d9; font-size: 18px;">Your private key has been saved automatically.</p>
-                  <p style="color: #8b949e;">You can now close this browser tab and return to your terminal.</p>
-                </body>
-                </html>"""
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub App Created - Repo360</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background-color: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      max-width: 520px;
+      width: 100%;
+      padding: 44px 32px;
+      text-align: center;
+      box-shadow: 0 12px 32px rgba(1, 4, 9, 0.6);
+    }
+    .icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 20px auto;
+      color: #3fb950;
+    }
+    h1 {
+      color: #3fb950;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-bottom: 12px;
+    }
+    p.desc {
+      color: #c9d1d9;
+      font-size: 17px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    p.hint {
+      color: #8b949e;
+      font-size: 14px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </svg>
+    <h1>GitHub App Created Successfully!</h1>
+    <p class="desc">Your private key has been saved automatically.</p>
+    <p class="hint">You can now close this browser tab and return to your terminal.</p>
+  </div>
+</body>
+</html>"""
 
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -152,9 +285,59 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
 
             except Exception as err:
                 logger.error("Failed to convert manifest code: %s", err)
+                error_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Setup Error - Repo360</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background-color: #0d1117;
+      color: #c9d1d9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+    }}
+    .card {{
+      background-color: #161b22;
+      border: 1px solid #f85149;
+      border-radius: 12px;
+      max-width: 520px;
+      width: 100%;
+      padding: 40px 32px;
+      text-align: center;
+    }}
+    h1 {{ color: #f85149; font-size: 24px; margin-bottom: 12px; }}
+    pre {{
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 13px;
+      color: #ff7b72;
+      text-align: left;
+      overflow-x: auto;
+      margin: 16px 0;
+    }}
+    p {{ color: #8b949e; font-size: 14px; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>App Conversion Failed</h1>
+    <pre>{html.escape(str(err))}</pre>
+    <p>Please return to your terminal to inspect the error log or retry.</p>
+  </div>
+</body>
+</html>"""
                 self.send_response(500)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(f"Failed to convert app manifest: {err}".encode("utf-8"))
+                self.wfile.write(error_html.encode("utf-8"))
             return
 
         self.send_response(404)
