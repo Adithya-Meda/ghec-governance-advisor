@@ -175,6 +175,13 @@ def print_terminal_scorecard(
     print(f"\n{C}{'=' * 76}{X}")
     print(f"{B}{C}   REPO360 PLATFORM GOVERNANCE & ENGINEERING SCORECARD{X}")
     print(f"{C}{'=' * 76}{X}")
+    unique_orgs = sorted({target.org_name for target in targets})
+    org_summary = (
+        f"{len(unique_orgs)} ({', '.join(unique_orgs)})"
+        if len(unique_orgs) <= 4
+        else f"{len(unique_orgs)} organizations"
+    )
+    print(f"   {B}Organizations Audited:{X} {org_summary}")
     print(f"   {B}Repositories Audited :{X} {len(targets)}")
     print(f"   {B}Total Checks Run     :{X} {total}")
     print(f"   {B}Controls Present     :{X} {G}{passed:<4} EXISTS{X}")
@@ -190,8 +197,9 @@ def print_terminal_scorecard(
     print(f"   {B}Flat SIEM Feed       (CSV)  :{X} {report_paths.get('csv', '')}")
     print(f"{C}{'=' * 76}{X}")
     repo_noun = "repository" if len(targets) == 1 else "repositories"
+    org_noun = "organization" if len(unique_orgs) == 1 else "organizations"
     time_suffix = f" in {elapsed_str}" if elapsed_seconds > 0 else ""
-    print(f"{G}{B}   [SUCCESS] Audit completed successfully across {len(targets)} {repo_noun}{time_suffix}.{X}\n")
+    print(f"{G}{B}   [SUCCESS] Audit completed successfully across {len(targets)} {repo_noun} in {len(unique_orgs)} {org_noun}{time_suffix}.{X}\n")
 
 
 def _log_repo_banner(
@@ -468,6 +476,11 @@ def _run_cli() -> int:
         help="Directory where output reports will be saved (defaults to ./output).",
     )
     parser.add_argument(
+        "--org",
+        default="",
+        help="Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). If omitted, all organizations with GitHub App installed are audited.",
+    )
+    parser.add_argument(
         "--mock-mode",
         action="store_true",
         help="Run in offline mock mode using simulated data for verification.",
@@ -573,21 +586,30 @@ def _run_cli() -> int:
         logger.info("Running in offline mock mode (simulating Repo360 audit results)...")
         from .mock_generator import create_mock_results
         if not targets:
-            targets = [
-                RepoTarget(org_name="fintech-core", repo_name="payment-gateway", target_personas={"all"}),
-                RepoTarget(org_name="fintech-core", repo_name="auth-service", target_personas={"all"}),
-            ]
+            mock_orgs = (
+                [o.strip() for o in args.org.split(",") if o.strip()]
+                if args.org
+                else ["fintech-core"]
+            )
+            targets = []
+            for org in mock_orgs:
+                targets.extend([
+                    RepoTarget(org_name=org, repo_name="payment-gateway", target_personas={"all"}),
+                    RepoTarget(org_name=org, repo_name="auth-service", target_personas={"all"}),
+                ])
         results = create_mock_results(targets)
 
         # 1. Organization-Wide Governance findings
         D = "\033[2m"
         X = "\033[0m"
-        logger.info(f"{D}{'-' * 74}{X}")
-        logger.info("\033[1;96mAuditing Organization:\033[0m \033[1;97mfintech-core\033[0m (Organization-Wide Governance)")
-        logger.info(f"{D}{'-' * 74}{X}")
-        for res in results:
-            if res.repo_name == "[Organization-Wide]":
-                _log_finding(res)
+        unique_mock_orgs = sorted({target.org_name for target in targets})
+        for org in unique_mock_orgs:
+            logger.info(f"{D}{'-' * 74}{X}")
+            logger.info("\033[1;96mAuditing Organization:\033[0m \033[1;97m%s\033[0m (Organization-Wide Governance)", org)
+            logger.info(f"{D}{'-' * 74}{X}")
+            for res in results:
+                if res.org_name == org and res.repo_name == "[Organization-Wide]":
+                    _log_finding(res)
 
         # 2. Repository findings with progress banner
         mock_stacks = [
@@ -599,7 +621,7 @@ def _run_cli() -> int:
             stack = mock_stacks[(idx - 1) % len(mock_stacks)]
             _log_repo_banner(idx, total_targets, target, stack)
             for res in results:
-                if res.repo_name == target.repo_name:
+                if res.org_name == target.org_name and res.repo_name == target.repo_name:
                     _log_finding(res)
     else:
         # Load credentials resolved across Environment / Local .env / User Config
@@ -628,60 +650,50 @@ def _run_cli() -> int:
                 api_base_url=api_base_url,
             )
 
-            # Auto-discover installation ID if omitted
-            if not auth.installation_id:
-                logger.info("Installation ID not configured. Auto-discovering installations via GitHub App JWT...")
-                installations = auth.discover_installations()
-                if not installations:
-                    logger.error(
-                        "No active installations found for GitHub App ID %s. "
-                        "Ensure an Organization Owner has installed the App on your GitHub organization.",
-                        app_id,
+            # Discover all installations for the GitHub App
+            all_installations = auth.discover_installations()
+            if not all_installations:
+                logger.error(
+                    "No active installations found for GitHub App ID %s. "
+                    "Ensure an Organization Owner has installed the App on your GitHub organization.",
+                    app_id,
+                )
+                _print_failure_banner(
+                    f"No active installations found for GitHub App ID {app_id}.\n"
+                    "  Action: Ensure an Organization Owner has installed the App on your GitHub organization."
+                )
+                return 1
+
+            # Filter installations if --org was specified
+            requested_orgs_raw = getattr(args, "org", "").strip()
+            if requested_orgs_raw:
+                filter_orgs = {o.strip().lower() for o in requested_orgs_raw.split(",") if o.strip()}
+                active_installations = [
+                    inst for inst in all_installations
+                    if inst.get("account", {}).get("login", "").lower() in filter_orgs
+                ]
+                found_orgs = {
+                    inst.get("account", {}).get("login", "").lower() for inst in active_installations
+                }
+                missing_orgs = filter_orgs - found_orgs
+                if missing_orgs:
+                    logger.warning(
+                        "The following requested organizations were not found among GitHub App installations: %s",
+                        ", ".join(sorted(missing_orgs)),
                     )
+                if not active_installations:
+                    logger.error("None of the specified organizations (%s) have the GitHub App installed.", requested_orgs_raw)
                     _print_failure_banner(
-                        f"No active installations found for GitHub App ID {app_id}.\n"
-                        "  Action: Ensure an Organization Owner has installed the App on your GitHub organization."
+                        f"None of the specified organizations ({requested_orgs_raw}) have the GitHub App installed.\n"
+                        "  Action: Install the GitHub App in the specified organization(s) or adjust the --org parameter."
                     )
                     return 1
+            else:
+                active_installations = all_installations
 
-                # Select installation matching target org if known, otherwise primary
-                selected = installations[0]
-                if targets:
-                    target_org = targets[0].org_name.lower()
-                    matched = [
-                        i for i in installations
-                        if i.get("account", {}).get("login", "").lower() == target_org
-                    ]
-                    if matched:
-                        selected = matched[0]
-
-                auth.set_installation_id(selected["id"])
-                org_login = selected.get("account", {}).get("login", "organization")
-                logger.info("Auto-discovered Installation ID %s for organization '%s'.", auth.installation_id, org_login)
-
-                # Warn if app is not configured for automatic coverage across all repositories
-                repo_sel = selected.get("repository_selection", "all")
-                if repo_sel != "all":
-                    logger.warning(
-                        "GitHub App access on '%s' is set to 'selected' repositories. "
-                        "To automatically cover all current and future repositories, change to 'All repositories' in Org Settings.",
-                        org_login,
-                    )
-
-                # Persist discovered installation ID to ~/.ghec-advisor/config.json so subsequent runs are instant
-                save_user_credentials(
-                    app_id=app_id,
-                    private_key_path=private_key,
-                    installation_id=auth.installation_id,
-                    api_base_url=api_base_url,
-                    llm_provider=provider,
-                    llm_model=ai_model,
-                    llm_api_key=llm_api_key,
-                    llm_enabled=llm_enabled,
-                )
-                env_path = os.path.abspath(".env")
-                if os.path.isfile(env_path):
-                    ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", str(auth.installation_id), env_path)
+            # Set active installation if not explicitly configured
+            if not auth.installation_id and active_installations:
+                auth.set_installation_id(active_installations[0]["id"])
 
             client = GHECClient(
                 auth=auth,
@@ -691,23 +703,48 @@ def _run_cli() -> int:
             inspector = RepoInspector(client=client)
 
             if not targets:
-                logger.info("Discovering accessible repositories via GitHub App...")
-                discovered = inspector.list_installation_repositories()
-                for r in discovered:
-                    owner = r.get("owner", {}).get("login", "")
-                    name = r.get("name", "")
-                    default_branch = r.get("default_branch", "main") or "main"
-                    if owner and name:
-                        targets.append(
-                            RepoTarget(
-                                org_name=owner,
-                                repo_name=name,
-                                target_personas={"all"},
-                                default_branch=default_branch,
-                            )
+                logger.info(
+                    "Discovering accessible repositories across %d GitHub organization(s)...",
+                    len(active_installations),
+                )
+                for inst in active_installations:
+                    org_login = inst.get("account", {}).get("login", "")
+                    inst_id = inst.get("id")
+                    if not inst_id:
+                        continue
+
+                    repo_sel = inst.get("repository_selection", "all")
+                    if repo_sel != "all":
+                        logger.warning(
+                            "GitHub App access on '%s' is set to 'selected' repositories. "
+                            "To automatically cover all current and future repositories, change to 'All repositories' in Org Settings.",
+                            org_login,
                         )
+
+                    discovered = inspector.list_installation_repositories(installation_id=inst_id)
+                    for r in discovered:
+                        owner = r.get("owner", {}).get("login", "") or org_login
+                        name = r.get("name", "")
+                        default_branch = r.get("default_branch", "main") or "main"
+                        if owner and name:
+                            targets.append(
+                                RepoTarget(
+                                    org_name=owner,
+                                    repo_name=name,
+                                    target_personas={"all"},
+                                    default_branch=default_branch,
+                                )
+                            )
+
+                unique_discovered_orgs = sorted({t.org_name for t in targets})
                 repo_noun = "repository" if len(targets) == 1 else "repositories"
-                logger.info("Auto-discovered %d accessible %s.", len(targets), repo_noun)
+                logger.info(
+                    "Auto-discovered %d accessible %s across %d organization(s): %s.",
+                    len(targets),
+                    repo_noun,
+                    len(unique_discovered_orgs),
+                    ", ".join(unique_discovered_orgs),
+                )
 
             if not targets:
                 logger.warning("No repositories found to audit. Ensure the GitHub App is installed on repositories.")
@@ -723,7 +760,8 @@ def _run_cli() -> int:
     executive_summary = ""
     if not args.mock_mode and ai_engine.is_available() and targets:
         logger.info("Synthesizing Executive Risk & Governance Narrative via AI...")
-        executive_summary = ai_engine.generate_executive_summary(results, targets[0].org_name)
+        unique_orgs = sorted({t.org_name for t in targets})
+        executive_summary = ai_engine.generate_executive_summary(results, ", ".join(unique_orgs))
     elif args.mock_mode:
         executive_summary = (
             "Simulated Executive Risk & Governance Briefing for offline audit verification."

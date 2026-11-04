@@ -46,9 +46,21 @@ class RepoInspector:
         return self.client.get(f"/orgs/{org}/actions/permissions", allow_404=True)
 
     def list_installation_repositories(
-        self, per_page: int = 100, max_pages: int = 50
+        self,
+        installation_id: Optional[int | str] = None,
+        per_page: int = 100,
+        max_pages: int = 50,
     ) -> List[Dict[str, Any]]:
-        """List all repositories accessible to the current GitHub App installation."""
+        """List all repositories accessible to a specific or current GitHub App installation.
+
+        Args:
+            installation_id: Optional installation ID. If omitted, uses active default.
+            per_page: Repositories per page (max 100).
+            max_pages: Maximum pages to retrieve.
+
+        Returns:
+            List of repository metadata objects.
+        """
         all_repos: List[Dict[str, Any]] = []
         page = 1
 
@@ -57,6 +69,7 @@ class RepoInspector:
                 "/installation/repositories",
                 params={"per_page": per_page, "page": page},
                 allow_404=True,
+                installation_id=installation_id,
             )
             if not data or not isinstance(data, dict):
                 break

@@ -100,3 +100,82 @@ def test_main_keyboard_interrupt_clean_exit() -> None:
         with patch("src.main._run_cli", side_effect=KeyboardInterrupt):
             exit_code = main()
             assert exit_code == 130
+
+
+def test_multi_org_mock_mode_execution(capsys) -> None:
+    """Verify multi-org audit execution in mock mode with --org flag."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        test_args = [
+            "repo360",
+            "audit",
+            "--org",
+            "fintech-core,payments-svc",
+            "--output-dir",
+            temp_dir,
+            "--mock-mode",
+        ]
+
+        with patch("sys.argv", test_args):
+            exit_code = main()
+
+        assert exit_code == 0
+
+        captured = capsys.readouterr()
+        assert "Organizations Audited:" in captured.out
+        assert "2 (fintech-core, payments-svc)" in captured.out
+        assert "Repositories Audited :" in captured.out
+        assert "4" in captured.out
+
+        # Verify output reports generated
+        files = os.listdir(temp_dir)
+        assert any(f.endswith(".xlsx") for f in files)
+        assert any(f.endswith(".csv") for f in files)
+        assert any(f.endswith(".html") for f in files)
+
+
+def test_multi_org_live_filtering() -> None:
+    """Verify that --org filters live GitHub App installations and audits matching orgs."""
+    mock_installations = [
+        {"id": 101, "account": {"login": "OrgAlpha"}, "repository_selection": "all"},
+        {"id": 102, "account": {"login": "OrgBeta"}, "repository_selection": "all"},
+        {"id": 103, "account": {"login": "OrgGamma"}, "repository_selection": "all"},
+    ]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        test_args = [
+            "repo360",
+            "audit",
+            "--org",
+            "OrgAlpha,OrgBeta",
+            "--output-dir",
+            temp_dir,
+        ]
+
+        with patch("sys.argv", test_args):
+            with patch("src.credentials.resolve_runtime_credentials") as mock_creds:
+                mock_creds.return_value = {
+                    "app_id": "12345",
+                    "installation_id": None,
+                    "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----",
+                    "api_base_url": "https://api.github.com",
+                    "llm_provider": "gemini",
+                    "llm_model": "gemini-2.5-flash",
+                    "llm_api_key": "",
+                    "llm_enabled": False,
+                }
+                with patch("src.auth.github_app_auth.GitHubAppAuth._load_private_key", return_value="dummy_key"):
+                    with patch("src.auth.github_app_auth.GitHubAppAuth.discover_installations", return_value=mock_installations):
+                        with patch("src.collector.repo_inspector.RepoInspector.list_installation_repositories") as mock_list_repos:
+                            mock_list_repos.side_effect = [
+                                [{"name": "repo-a", "owner": {"login": "OrgAlpha"}, "default_branch": "main"}],
+                                [{"name": "repo-b", "owner": {"login": "OrgBeta"}, "default_branch": "main"}],
+                            ]
+                            with patch("src.main.run_audit", return_value=[]):
+                                exit_code = main()
+                                assert exit_code == 0
+                                # list_installation_repositories should be called for OrgAlpha (101) and OrgBeta (102), but not OrgGamma (103)
+                                assert mock_list_repos.call_count == 2
+                                call_args_ids = [c[1]["installation_id"] for c in mock_list_repos.call_args_list]
+                                assert 101 in call_args_ids
+                                assert 102 in call_args_ids
+                                assert 103 not in call_args_ids

@@ -127,3 +127,73 @@ def test_auto_discover_during_token_exchange(mock_post: MagicMock, mock_get: Mag
     assert token == "ghs_auto_discovered_token"
     assert auth.installation_id == 555666
 
+
+@patch("requests.get")
+@patch("requests.post")
+def test_multi_org_token_resolution_and_caching(
+    mock_post: MagicMock,
+    mock_get: MagicMock,
+    test_rsa_key_pem: str,
+) -> None:
+    """Verify dynamic token resolution and distinct caching across multiple organizations."""
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = [
+        {"id": 1001, "account": {"login": "DefaultOrg24"}, "repository_selection": "all"},
+        {"id": 1002, "account": {"login": "PaymentsCore"}, "repository_selection": "all"},
+    ]
+    mock_get.return_value = mock_get_resp
+
+    def mock_post_side_effect(url, *args, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        if "1001" in url:
+            resp.json.return_value = {"token": "ghs_token_defaultorg24"}
+        elif "1002" in url:
+            resp.json.return_value = {"token": "ghs_token_paymentscore"}
+        else:
+            resp.status_code = 404
+        return resp
+
+    mock_post.side_effect = mock_post_side_effect
+
+    auth = GitHubAppAuth(app_id=123, private_key=test_rsa_key_pem)
+
+    # 1. Fetch token for DefaultOrg24
+    token_org1 = auth.get_installation_token(org="DefaultOrg24")
+    assert token_org1 == "ghs_token_defaultorg24"
+    assert mock_post.call_count == 1
+
+    # 2. Fetch token for PaymentsCore (case-insensitive check)
+    token_org2 = auth.get_installation_token(org="paymentscore")
+    assert token_org2 == "ghs_token_paymentscore"
+    assert mock_post.call_count == 2
+
+    # 3. Re-fetching DefaultOrg24 should use per-org cache without another POST
+    cached_org1 = auth.get_installation_token(org="defaultorg24")
+    assert cached_org1 == "ghs_token_defaultorg24"
+    assert mock_post.call_count == 2
+
+    # 4. Auth headers for PaymentsCore should reflect PaymentsCore token
+    headers_org2 = auth.get_auth_headers(org="PaymentsCore")
+    assert headers_org2["Authorization"] == "Bearer ghs_token_paymentscore"
+    assert mock_post.call_count == 2
+
+
+@patch("requests.get")
+def test_multi_org_uninstalled_org_raises_error(
+    mock_get: MagicMock,
+    test_rsa_key_pem: str,
+) -> None:
+    """Verify error raised when requesting token for uninstalled organization."""
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = [
+        {"id": 1001, "account": {"login": "DefaultOrg24"}},
+    ]
+    mock_get.return_value = mock_get_resp
+
+    auth = GitHubAppAuth(app_id=123, private_key=test_rsa_key_pem)
+    with pytest.raises(RuntimeError, match="No GitHub App installation found for organization 'NonExistentOrg'"):
+        auth.get_installation_token(org="NonExistentOrg")
+

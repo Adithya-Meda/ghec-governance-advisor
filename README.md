@@ -44,7 +44,11 @@ repo360 setup --org <your-org>
 
 #### 3. Run Audit
 ```bash
+# Audit all organizations where the GitHub App is installed
 repo360 audit
+
+# Or filter to specific organizations
+repo360 audit --org OrgAlpha,OrgBeta
 ```
 *Audits all accessible repositories with live progress banners and writes reports to `./output/` (`.html`, `.xlsx`, `.csv`).*
 
@@ -54,6 +58,19 @@ To view available command-line flags and options:
 ```bash
 repo360 audit -h
 ```
+
+---
+
+### Multi-Organization Support (Single App & Private Key)
+
+Repo360 natively supports multi-organization enterprises across GitHub.com, GHE.com, and GitHub Enterprise Server using a single GitHub App:
+
+1. **Install Once, Use Everywhere:**
+   Install your registered GitHub App across any number of organizations in your enterprise.
+2. **Auto-Discovery:**
+   Running `repo360 audit` automatically discovers every organization where the app is installed, dynamically provisions scoped installation tokens per organization, and aggregates findings into a single executive dashboard and SIEM export.
+3. **Targeted Filtering:**
+   Use `--org <org1,org2>` to audit specific organizations on demand.
 
 ---
 
@@ -84,6 +101,8 @@ jobs:
         with:
           app_id: ${{ vars.REPO360_APP_ID }}
           private_key: ${{ secrets.REPO360_APP_PRIVATE_KEY }}
+          # Optional: filter by org(s); audits all installed orgs if omitted
+          # org: "OrgAlpha,OrgBeta"
           # For GHE.com: api_base_url: "https://api.<enterprise>.ghe.com"
           # For GHES:    api_base_url: "https://ghe.mycompany.com/api/v3"
 

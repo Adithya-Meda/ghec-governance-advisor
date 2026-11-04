@@ -40,6 +40,9 @@ class GitHubAppAuth:
         self.installation_id = int(installation_id) if installation_id else None
         self.api_base_url = api_base_url.rstrip("/")
         self._private_key_pem = self._load_private_key(private_key)
+        self._token_cache: Dict[int, Tuple[str, float]] = {}  # installation_id -> (token, expires_at)
+        self._org_to_installation: Dict[str, int] = {}  # org_name.lower() -> installation_id
+        self._installations_cache: Optional[List[Dict[str, Any]]] = None
         self._cached_token: Optional[str] = None
         self._token_expires_at: float = 0.0
         self._clock_skew: float = self._calculate_clock_skew()
@@ -47,31 +50,83 @@ class GitHubAppAuth:
     def set_installation_id(self, installation_id: int | str) -> None:
         """Set or update the active installation ID."""
         self.installation_id = int(installation_id)
-        self._cached_token = None
-        self._token_expires_at = 0.0
+        if self.installation_id in self._token_cache:
+            self._cached_token, self._token_expires_at = self._token_cache[self.installation_id]
+        else:
+            self._cached_token = None
+            self._token_expires_at = 0.0
 
-    def discover_installations(self) -> List[Dict[str, Any]]:
-        """List all active installations of this GitHub App using JWT auth.
+    def discover_installations(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """List all active installations of this GitHub App across organizations using JWT auth.
+
+        Args:
+            force_refresh: Whether to ignore cached installation inventory.
 
         Returns:
             List of installation dictionaries from GitHub API.
         """
+        if not force_refresh and self._installations_cache is not None:
+            return self._installations_cache
+
         jwt_token = self.generate_jwt()
         endpoint = f"{self.api_base_url}/app/installations"
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "GHEC-Governance-Advisor/1.0",
+            "User-Agent": "Repo360-Platform/1.0",
         }
-        try:
-            response = requests.get(endpoint, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            return data if isinstance(data, list) else []
-        except Exception as err:
-            logger.error("Failed to list GitHub App installations: %s", err)
-            return []
+
+        all_installations: List[Dict[str, Any]] = []
+        page = 1
+        per_page = 100
+
+        while True:
+            try:
+                response = requests.get(
+                    endpoint,
+                    headers=headers,
+                    params={"per_page": per_page, "page": page},
+                    timeout=15,
+                )
+                response.raise_for_status()
+                data = response.json()
+                if not isinstance(data, list) or not data:
+                    break
+                all_installations.extend(data)
+                if len(data) < per_page:
+                    break
+                page += 1
+            except Exception as err:
+                logger.error("Failed to list GitHub App installations (page %d): %s", page, err)
+                break
+
+        # Map organization logins to installation IDs
+        for inst in all_installations:
+            login = inst.get("account", {}).get("login", "")
+            inst_id = inst.get("id")
+            if login and inst_id:
+                self._org_to_installation[login.lower()] = int(inst_id)
+
+        self._installations_cache = all_installations
+        return all_installations
+
+    def get_installation_id_for_org(self, org: str) -> Optional[int]:
+        """Look up the installation ID for a specific organization login.
+
+        Args:
+            org: Organization name.
+
+        Returns:
+            Numeric installation ID if found, else None.
+        """
+        target_org = org.strip().lower()
+        if target_org in self._org_to_installation:
+            return self._org_to_installation[target_org]
+
+        # Refresh installations cache if not found initially
+        self.discover_installations(force_refresh=True)
+        return self._org_to_installation.get(target_org)
 
     def _calculate_clock_skew(self) -> float:
         """Calculate clock skew between local machine and GitHub API server.
@@ -151,50 +206,82 @@ class GitHubAppAuth:
         )
         return encoded_jwt
 
-    def get_installation_token(self, force_refresh: bool = False) -> str:
+    def get_installation_token(
+        self,
+        installation_id: Optional[int | str] = None,
+        org: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
         """Obtain a valid installation access token, using cache if still valid.
 
+        Supports multi-organization environments: resolves token by installation_id
+        or organization name, with per-installation token caching.
+
         Args:
+            installation_id: Specific Numeric Installation ID.
+            org: Target organization login name.
             force_refresh: Whether to bypass cache and request a fresh token.
 
         Returns:
             Bearer token string (starts with 'ghs_').
         """
-        now = time.time()
-        # Use cached token if valid for at least 5 more minutes
-        if (
-            not force_refresh
-            and self._cached_token
-            and (self._token_expires_at - now) > 300
-        ):
-            return self._cached_token
-
-        # Auto-discover installation ID if not explicitly specified
-        if not self.installation_id:
+        # 1. Resolve target installation ID
+        target_id: Optional[int] = None
+        if installation_id is not None:
+            target_id = int(installation_id)
+        elif org:
+            target_id = self.get_installation_id_for_org(org)
+            if not target_id:
+                raise RuntimeError(
+                    f"No GitHub App installation found for organization '{org}'. "
+                    f"Ensure the GitHub App (ID: {self.app_id}) is installed on '{org}'."
+                )
+        elif self.installation_id is not None:
+            target_id = self.installation_id
+        else:
             installations = self.discover_installations()
             if not installations:
                 raise RuntimeError(
                     f"No active installations found for GitHub App ID {self.app_id}. "
                     "Ensure an Organization Owner has installed the App on your GitHub organization."
                 )
-            self.set_installation_id(installations[0]["id"])
+            target_id = int(installations[0]["id"])
+            self.set_installation_id(target_id)
 
+        now = time.time()
+        # 2. Check per-installation cache (valid for at least 5 more minutes)
+        if not force_refresh and target_id in self._token_cache:
+            cached_token, expires_at = self._token_cache[target_id]
+            if (expires_at - now) > 300:
+                return cached_token
+
+        # 3. Exchange new installation token via App JWT
         jwt_token = self.generate_jwt()
-        endpoint = f"{self.api_base_url}/app/installations/{self.installation_id}/access_tokens"
+        endpoint = f"{self.api_base_url}/app/installations/{target_id}/access_tokens"
         headers = {
             "Authorization": f"Bearer {jwt_token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Repo360-Platform/1.0",
         }
 
         try:
             response = requests.post(endpoint, headers=headers, timeout=15)
             response.raise_for_status()
             data: Dict[str, Any] = response.json()
-            self._cached_token = data["token"]
-            # Typically valid for 1 hour (3600 seconds)
-            self._token_expires_at = now + 3500
-            return self._cached_token
+            new_token: str = data["token"]
+            expires_at = now + 3500
+
+            # Store in multi-installation cache
+            self._token_cache[target_id] = (new_token, expires_at)
+
+            # Update legacy single-install cache if this matches active installation
+            if self.installation_id == target_id or self.installation_id is None:
+                self.installation_id = target_id
+                self._cached_token = new_token
+                self._token_expires_at = expires_at
+
+            return new_token
         except requests.exceptions.RequestException as err:
             details = ""
             if getattr(err, "response", None) is not None:
@@ -202,21 +289,36 @@ class GitHubAppAuth:
             logger.error(
                 "Failed to obtain installation token for App ID %s and Installation ID %s%s",
                 self.app_id,
-                self.installation_id,
+                target_id,
                 details,
             )
             raise RuntimeError(
-                f"GitHub App token exchange failed: {err}{details}"
+                f"GitHub App token exchange failed for installation {target_id}: {err}{details}"
             ) from err
 
-    def get_auth_headers(self) -> Dict[str, str]:
-        """Return standardized authorization headers for GHEC API requests."""
-        token = self.get_installation_token()
+    def get_auth_headers(
+        self,
+        installation_id: Optional[int | str] = None,
+        org: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> Dict[str, str]:
+        """Return standardized authorization headers for GHEC API requests.
+
+        Args:
+            installation_id: Optional target installation ID.
+            org: Optional target organization name.
+            force_refresh: Whether to force token renewal.
+        """
+        token = self.get_installation_token(
+            installation_id=installation_id,
+            org=org,
+            force_refresh=force_refresh,
+        )
         return {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "GHEC-Governance-Advisor/1.0",
+            "User-Agent": "Repo360-Platform/1.0",
         }
 
     def __repr__(self) -> str:

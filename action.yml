@@ -25,6 +25,10 @@ inputs:
     description: "Path to repository inventory CSV (optional: audits all accessible repos if omitted)"
     required: false
     default: ""
+  org:
+    description: "Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). Audits all installed organizations if omitted."
+    required: false
+    default: ""
   output_dir:
     description: "Directory to save generated Excel, CSV, and HTML reports"
     required: false
@@ -82,6 +86,9 @@ runs:
         LLM_MODEL: ${{ inputs.llm_model }}
       run: |
         CMD="repo360 audit --output-dir ${{ inputs.output_dir }}"
+        if [ -n "${{ inputs.org }}" ]; then
+          CMD="$CMD --org ${{ inputs.org }}"
+        fi
         if [ -n "${{ inputs.advisory_config }}" ]; then
           CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
         fi

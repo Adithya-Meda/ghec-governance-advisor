@@ -141,26 +141,55 @@ class GHECClient:
             )
             time.sleep(delay)
 
+    @staticmethod
+    def _extract_org_from_path(path_or_url: str) -> Optional[str]:
+        """Extract organization or owner from standard GitHub REST API endpoint paths.
+
+        Matches:
+          - /orgs/{org} or /orgs/{org}/...
+          - /repos/{org}/{repo} or /repos/{org}/{repo}/...
+          - Full URLs such as https://api.github.com/orgs/{org}/...
+        """
+        clean = path_or_url.split("?")[0].strip()
+        if "://" in clean:
+            clean = clean.split("://", 1)[1]
+            if "/" in clean:
+                clean = clean.split("/", 1)[1]
+            else:
+                return None
+        parts = [p for p in clean.strip("/").split("/") if p]
+        if len(parts) >= 2 and parts[0] in ("orgs", "repos"):
+            return parts[1]
+        return None
+
     def get(
         self,
         path: str,
         params: Optional[Dict[str, Any]] = None,
         allow_404: bool = False,
+        installation_id: Optional[int | str] = None,
+        org: Optional[str] = None,
     ) -> Optional[Any]:
         """Perform an authenticated GET request against GHEC API with full rate-limit resilience.
+
+        Dynamically extracts and injects per-organization GitHub App installation tokens
+        to support multi-organization environments without authorization errors.
 
         Args:
             path: Relative API path (e.g., '/repos/org/repo') or absolute URL.
             params: Optional query parameters.
             allow_404: If True, returns None instead of raising an exception on 404.
+            installation_id: Optional specific installation ID to use for this request.
+            org: Optional organization name override.
 
         Returns:
             Parsed JSON object/list or None if 404 allowed.
         """
         url = path if path.startswith("http") else f"{self.base_url}/{path.lstrip('/')}"
+        target_org = org or self._extract_org_from_path(url)
 
         for attempt in range(1, self.max_retries + 1):
-            headers = self.auth.get_auth_headers()
+            headers = self.auth.get_auth_headers(installation_id=installation_id, org=target_org)
             try:
                 response = self.session.get(
                     url,
@@ -210,7 +239,11 @@ class GHECClient:
                 # Handle Expired Token (401)
                 if response.status_code == 401 and attempt < self.max_retries:
                     logger.info("GitHub installation token expired. Refreshing token and retrying...")
-                    self.auth.get_installation_token(force_refresh=True)
+                    self.auth.get_installation_token(
+                        installation_id=installation_id,
+                        org=target_org,
+                        force_refresh=True,
+                    )
                     continue
 
                 # Handle Server Errors (500, 502, 503, 504)
@@ -266,6 +299,8 @@ class GHECClient:
         params: Optional[Dict[str, Any]] = None,
         per_page: int = 100,
         max_pages: int = 50,
+        installation_id: Optional[int | str] = None,
+        org: Optional[str] = None,
     ) -> List[Any]:
         """Paginate through a GHEC list endpoint supporting up to 5,000 items.
 
@@ -274,6 +309,8 @@ class GHECClient:
             params: Query parameters.
             per_page: Items per page (max 100).
             max_pages: Maximum pages to fetch (default: 50 pages = 5,000 items).
+            installation_id: Optional specific installation ID for this request.
+            org: Optional organization name override.
 
         Returns:
             Aggregated list of items.
@@ -285,7 +322,12 @@ class GHECClient:
 
         while page <= max_pages:
             query_params["page"] = page
-            data = self.get(path, params=query_params)
+            data = self.get(
+                path,
+                params=query_params,
+                installation_id=installation_id,
+                org=org,
+            )
             if not data or not isinstance(data, list):
                 break
             all_items.extend(data)

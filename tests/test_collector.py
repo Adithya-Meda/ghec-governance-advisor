@@ -140,3 +140,41 @@ def test_detect_tech_stack_optimized_root_listing(mock_client: GHECClient) -> No
         assert "Dockerfile" in stack["manifests"]
         assert "Fastapi" in stack["frameworks"]
 
+
+def test_extract_org_from_path(mock_client: GHECClient) -> None:
+    """Verify endpoint path parsing extracts organization login."""
+    assert mock_client._extract_org_from_path("/repos/fintech-core/payment-gateway") == "fintech-core"
+    assert mock_client._extract_org_from_path("/orgs/fintech-core/rulesets") == "fintech-core"
+    assert mock_client._extract_org_from_path("https://api.github.com/repos/payments/billing/contents") == "payments"
+    assert mock_client._extract_org_from_path("/installation/repositories") is None
+    assert mock_client._extract_org_from_path("/user/repos") is None
+
+
+def test_client_routes_org_to_auth(mock_client: GHECClient) -> None:
+    """Verify that GHECClient automatically extracts org and passes to auth.get_auth_headers."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"x-ratelimit-remaining": "4900"}
+    mock_resp.json.return_value = {"id": 100}
+
+    with patch.object(mock_client.session, "get", return_value=mock_resp):
+        mock_client.get("/repos/target-org/target-repo")
+        mock_client.auth.get_auth_headers.assert_called_with(
+            installation_id=None,
+            org="target-org",
+        )
+
+
+def test_list_installation_repositories_with_explicit_installation_id(mock_client: GHECClient) -> None:
+    """Verify list_installation_repositories passes installation_id down to client."""
+    inspector = RepoInspector(client=mock_client)
+    mock_payload = {
+        "total_count": 1,
+        "repositories": [{"name": "repo-1", "owner": {"login": "org-1"}, "default_branch": "main"}],
+    }
+
+    with patch.object(mock_client, "get", return_value=mock_payload) as mock_get:
+        inspector.list_installation_repositories(installation_id=999888)
+        assert mock_get.called
+        assert mock_get.call_args[1]["installation_id"] == 999888
+
