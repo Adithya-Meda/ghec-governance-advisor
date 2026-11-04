@@ -1,7 +1,7 @@
 """GitHub App Authentication Manager.
 
 Handles RS256 JWT generation and Installation Access Token retrieval
-for GitHub Enterprise Cloud (GHEC) instances without leaking credentials.
+for GitHub organizations without leaking credentials.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class GitHubAppAuth:
             app_id: Numeric GitHub App ID.
             installation_id: Numeric Installation ID (optional; auto-discovered if omitted).
             private_key: Path to PEM file, or raw PEM string content.
-            api_base_url: Base API URL for GHEC (defaults to https://api.github.com).
+            api_base_url: Base API URL for GitHub (defaults to https://api.github.com).
         """
         self.app_id = int(app_id)
         self.installation_id = int(installation_id) if installation_id else None
@@ -302,7 +302,7 @@ class GitHubAppAuth:
         org: Optional[str] = None,
         force_refresh: bool = False,
     ) -> Dict[str, str]:
-        """Return standardized authorization headers for GHEC API requests.
+        """Return standardized authorization headers for GitHub API requests.
 
         Args:
             installation_id: Optional target installation ID.

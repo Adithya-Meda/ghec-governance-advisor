@@ -82,8 +82,6 @@ Run automated audits inside any repository without local setup.
 - `REPO360_APP_ID`: Numeric GitHub App ID (Repository Variable or Secret)
 - `REPO360_APP_PRIVATE_KEY`: Private key `.pem` contents (Repository Secret)
 
-*(Note: Legacy `GHEC_APP_ID` and `GHEC_APP_PRIVATE_KEY` remain fully supported).*
-
 #### 2. Workflow Example (`.github/workflows/audit.yml`)
 ```yaml
 name: "Repo360 Platform Audit"

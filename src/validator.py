@@ -13,7 +13,7 @@ VALID_PERSONAS = {"org_admin", "repo_admin", "contributor", "all"}
 
 DEFAULT_APP_CONFIG: Dict[str, Any] = {
     "github": {
-        "api_base_url": "${REPO360_API_BASE_URL:-${GHEC_API_BASE_URL:-https://api.github.com}}",
+        "api_base_url": "${REPO360_API_BASE_URL:-https://api.github.com}",
         "timeout_seconds": 30,
         "max_retries": 3,
         "retry_backoff_factor": 1.5,

@@ -1,4 +1,4 @@
-"""Base structures and abstractions for GHEC advisory checks."""
+"""Base structures and abstractions for Repo360 advisory checks."""
 
 from __future__ import annotations
 

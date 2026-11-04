@@ -22,20 +22,13 @@ logger = logging.getLogger("repo360-credentials")
 def get_user_config_dir() -> str:
     """Return OS-standard user configuration directory for Repo360.
 
-    Can be overridden via REPO360_CONFIG_DIR or GHEC_CONFIG_DIR environment variables.
-    Seamlessly migrates legacy ~/.ghec-advisor if found.
+    Can be overridden via REPO360_CONFIG_DIR environment variable.
     """
-    custom = os.getenv("REPO360_CONFIG_DIR") or os.getenv("GHEC_CONFIG_DIR")
+    custom = os.getenv("REPO360_CONFIG_DIR")
     if custom:
         path = os.path.abspath(custom)
     else:
         path = os.path.expanduser("~/.repo360")
-        legacy_path = os.path.expanduser("~/.ghec-advisor")
-        if not os.path.exists(path) and os.path.isdir(legacy_path):
-            try:
-                shutil.copytree(legacy_path, path)
-            except Exception:
-                pass
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -82,7 +75,7 @@ def save_user_credentials(
     llm_api_key: str = "",
     llm_enabled: bool = True,
 ) -> str:
-    """Persist user credentials and AI preferences to ~/.ghec-advisor/config.json."""
+    """Persist user credentials and AI preferences to ~/.repo360/config.json."""
     config_data: Dict[str, Any] = {
         "github": {
             "app_id": int(app_id) if str(app_id).isdigit() else app_id,
@@ -111,7 +104,7 @@ def save_user_credentials(
 
 
 def load_user_credentials() -> Dict[str, Any]:
-    """Load configuration from ~/.ghec-advisor/config.json if it exists."""
+    """Load configuration from ~/.repo360/config.json if it exists."""
     config_path = get_credentials_path()
     if os.path.isfile(config_path):
         try:
@@ -132,7 +125,7 @@ def find_private_key(candidate_path: Optional[str] = None) -> Optional[str]:
         if candidate_path.startswith("-----BEGIN"):
             return candidate_path
 
-    # 2. Check ~/.ghec-advisor/secrets/
+    # 2. Check ~/.repo360/secrets/
     user_secrets = get_secrets_dir()
     if os.path.isdir(user_secrets):
         keys = [
@@ -161,7 +154,7 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
     """Resolve credentials across environment variables, local .env, and user profile config.
 
     Precedence:
-    1. System environment variables (REPO360_* or legacy GHEC_*)
+    1. System environment variables (REPO360_*)
     2. Local .env file (if running inside a cloned repository)
     3. User profile config (~/.repo360/config.json)
     """
@@ -170,14 +163,13 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
     user_llm = user_cfg.get("llm", {})
 
     # GitHub App ID
-    app_id = (os.getenv("REPO360_APP_ID") or os.getenv("GHEC_APP_ID") or user_gh.get("app_id") or "")
+    app_id = (os.getenv("REPO360_APP_ID") or user_gh.get("app_id") or "")
     if app_id:
         app_id = str(app_id).strip()
 
     # Installation ID
     installation_id = (
         os.getenv("REPO360_APP_INSTALLATION_ID")
-        or os.getenv("GHEC_APP_INSTALLATION_ID")
         or user_gh.get("installation_id")
         or ""
     )
@@ -187,16 +179,14 @@ def resolve_runtime_credentials() -> Dict[str, Any]:
     # API Base URL
     api_base_url = (
         os.getenv("REPO360_API_BASE_URL")
-        or os.getenv("GHEC_API_BASE_URL")
         or user_gh.get("api_base_url")
         or "https://api.github.com"
     ).rstrip("/")
 
     # Private Key
-    raw_key = os.getenv("REPO360_APP_PRIVATE_KEY") or os.getenv("GHEC_APP_PRIVATE_KEY") or ""
+    raw_key = os.getenv("REPO360_APP_PRIVATE_KEY") or ""
     key_path = (
         os.getenv("REPO360_APP_PRIVATE_KEY_PATH")
-        or os.getenv("GHEC_APP_PRIVATE_KEY_PATH")
         or user_gh.get("private_key_path")
         or ""
     )

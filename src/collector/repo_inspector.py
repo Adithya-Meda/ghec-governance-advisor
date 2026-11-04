@@ -1,4 +1,4 @@
-"""Repository and Organization data collector for GHEC governance checks."""
+"""Repository and Organization data collector for Repo360 governance checks."""
 
 from __future__ import annotations
 
@@ -7,19 +7,19 @@ import logging
 from typing import Any, Dict, List, Optional
 import requests
 
-from .client import GHECClient
+from .client import Repo360Client
 
 logger = logging.getLogger(__name__)
 
 
 class RepoInspector:
-    """Collects metadata, settings, and file contents from GHEC."""
+    """Collects metadata, settings, and file contents from GitHub."""
 
-    def __init__(self, client: GHECClient) -> None:
+    def __init__(self, client: Repo360Client) -> None:
         """Initialize with an authenticated client.
 
         Args:
-            client: Authenticated GHECClient instance.
+            client: Authenticated Repo360Client instance.
         """
         self.client = client
 

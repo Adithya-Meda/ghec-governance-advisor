@@ -1,2 +1,2 @@
-"""Test package for GHEC Governance Advisor."""
+"""Test package for Repo360."""
 

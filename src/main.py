@@ -1,4 +1,4 @@
-"""GHEC Governance & Advisory Agent CLI Entrypoint."""
+"""Repo360 Platform Governance & Intelligence CLI Entrypoint."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from .checks import (
     CheckStatus,
     Persona,
 )
-from .collector.client import GHECClient
+from .collector.client import Repo360Client
 from .collector.repo_inspector import RepoInspector
 from .reporters.csv_reporter import CSVReporter
 from .reporters.excel_reporter import ExcelReporter
@@ -84,7 +84,7 @@ def setup_logger() -> logging.Logger:
     logging.getLogger("google.genai").setLevel(logging.ERROR)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    app_logger = logging.getLogger("advisor-agent")
+    app_logger = logging.getLogger("repo360")
     app_logger.setLevel(logging.INFO)
     app_logger.handlers.clear()
 
@@ -523,7 +523,7 @@ def _run_cli() -> int:
     output_dir = args.output_dir or app_config.get("reporting", {}).get("output_directory", "./output")
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load credentials with priority: Environment Variables > Local .env > User Config (~/.ghec-advisor/config.json)
+    # Load credentials with priority: Environment Variables > Local .env > User Config (~/.repo360/config.json)
     from .credentials import resolve_runtime_credentials, save_user_credentials
     creds = resolve_runtime_credentials()
 
@@ -695,7 +695,7 @@ def _run_cli() -> int:
             if not auth.installation_id and active_installations:
                 auth.set_installation_id(active_installations[0]["id"])
 
-            client = GHECClient(
+            client = Repo360Client(
                 auth=auth,
                 timeout_seconds=app_config.get("github", {}).get("timeout_seconds", 30),
                 max_retries=app_config.get("github", {}).get("max_retries", 3),

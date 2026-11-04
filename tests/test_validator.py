@@ -36,19 +36,19 @@ def test_update_env_file() -> None:
 
     try:
         # 1. Append a new key
-        ok = ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", "998877", temp_env)
+        ok = ConfigValidator.update_env_file("REPO360_APP_INSTALLATION_ID", "998877", temp_env)
         assert ok is True
         with open(temp_env, "r", encoding="utf-8") as f:
             content = f.read()
         assert "EXISTING_VAR=123" in content
-        assert "GHEC_APP_INSTALLATION_ID=998877" in content
+        assert "REPO360_APP_INSTALLATION_ID=998877" in content
 
         # 2. Update existing key
-        ok2 = ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", "112233", temp_env)
+        ok2 = ConfigValidator.update_env_file("REPO360_APP_INSTALLATION_ID", "112233", temp_env)
         assert ok2 is True
         with open(temp_env, "r", encoding="utf-8") as f:
             content2 = f.read()
-        assert "GHEC_APP_INSTALLATION_ID=112233" in content2
+        assert "REPO360_APP_INSTALLATION_ID=112233" in content2
         assert "998877" not in content2
     finally:
         if os.path.exists(temp_env):

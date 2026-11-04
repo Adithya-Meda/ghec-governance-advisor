@@ -73,7 +73,7 @@ class OrgSecretScanningPushProtectionCheck(BaseCheck):
         self, inspector: RepoInspector, org: str, thresholds: Dict[str, Any]
     ) -> CheckResult:
         org_data = inspector.get_org_info(org) or {}
-        # In GHEC, secret scanning and push protection are reported on the org payload or security managers
+        # Secret scanning and push protection are reported on the org payload or security managers
         security_features = org_data.get("security_and_analysis", {})
         secret_scanning = security_features.get("secret_scanning", {}).get("status")
         push_protection = security_features.get(

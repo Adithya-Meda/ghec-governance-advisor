@@ -75,10 +75,6 @@ runs:
         REPO360_APP_PRIVATE_KEY: ${{ inputs.private_key }}
         REPO360_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
         REPO360_API_BASE_URL: ${{ inputs.api_base_url }}
-        GHEC_APP_ID: ${{ inputs.app_id }}
-        GHEC_APP_PRIVATE_KEY: ${{ inputs.private_key }}
-        GHEC_APP_INSTALLATION_ID: ${{ inputs.installation_id }}
-        GHEC_API_BASE_URL: ${{ inputs.api_base_url }}
         GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
         OPENAI_API_KEY: ${{ inputs.openai_api_key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}

@@ -1,22 +1,22 @@
-"""Unit tests for GHECClient and RepoInspector."""
+"""Unit tests for Repo360Client and RepoInspector."""
 
 from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from src.collector.client import GHECClient
+from src.collector.client import Repo360Client
 from src.collector.repo_inspector import RepoInspector
 
 
 @pytest.fixture
-def mock_client() -> GHECClient:
+def mock_client() -> Repo360Client:
     auth = MagicMock()
     auth.api_base_url = "https://api.github.com"
     auth.get_auth_headers.return_value = {"Authorization": "Bearer mock_token"}
-    return GHECClient(auth=auth, timeout_seconds=10)
+    return Repo360Client(auth=auth, timeout_seconds=10)
 
 
-def test_client_get_success(mock_client: GHECClient) -> None:
+def test_client_get_success(mock_client: Repo360Client) -> None:
     """Test successful GET request."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -28,7 +28,7 @@ def test_client_get_success(mock_client: GHECClient) -> None:
         assert res["name"] == "sample-repo"
 
 
-def test_client_get_404_allowed(mock_client: GHECClient) -> None:
+def test_client_get_404_allowed(mock_client: Repo360Client) -> None:
     """Test 404 handling when allow_404=True."""
     mock_resp = MagicMock()
     mock_resp.status_code = 404
@@ -40,7 +40,7 @@ def test_client_get_404_allowed(mock_client: GHECClient) -> None:
 
 
 @patch("time.sleep")
-def test_client_secondary_rate_limit_retry(mock_sleep: MagicMock, mock_client: GHECClient) -> None:
+def test_client_secondary_rate_limit_retry(mock_sleep: MagicMock, mock_client: Repo360Client) -> None:
     """Verify that secondary rate limits (403/429) automatically back off and retry."""
     # First attempt: 403 secondary rate limit with Retry-After: 1
     resp_rate_limited = MagicMock()
@@ -61,7 +61,7 @@ def test_client_secondary_rate_limit_retry(mock_sleep: MagicMock, mock_client: G
 
 
 
-def test_client_pagination(mock_client: GHECClient) -> None:
+def test_client_pagination(mock_client: Repo360Client) -> None:
     """Test pagination helper aggregates multi-page results."""
     page1 = [{"id": 1}, {"id": 2}]
     page2 = [{"id": 3}]
@@ -71,7 +71,7 @@ def test_client_pagination(mock_client: GHECClient) -> None:
         assert len(items) == 3
 
 
-def test_repo_inspector_file_content(mock_client: GHECClient) -> None:
+def test_repo_inspector_file_content(mock_client: Repo360Client) -> None:
     """Test base64 file content retrieval in RepoInspector."""
     inspector = RepoInspector(client=mock_client)
 
@@ -85,7 +85,7 @@ def test_repo_inspector_file_content(mock_client: GHECClient) -> None:
         assert content == "hello world"
 
 
-def test_repo_inspector_file_exists(mock_client: GHECClient) -> None:
+def test_repo_inspector_file_exists(mock_client: Repo360Client) -> None:
     """Test check_file_exists returns True when endpoint returns data."""
     inspector = RepoInspector(client=mock_client)
 
@@ -96,7 +96,7 @@ def test_repo_inspector_file_exists(mock_client: GHECClient) -> None:
         assert inspector.check_file_exists("org", "repo", ".missing") is False
 
 
-def test_list_installation_repositories(mock_client: GHECClient) -> None:
+def test_list_installation_repositories(mock_client: Repo360Client) -> None:
     """Test auto-discovery of repositories via App installation."""
     inspector = RepoInspector(client=mock_client)
     mock_payload = {
@@ -114,7 +114,7 @@ def test_list_installation_repositories(mock_client: GHECClient) -> None:
         assert repos[1]["default_branch"] == "develop"
 
 
-def test_detect_tech_stack_optimized_root_listing(mock_client: GHECClient) -> None:
+def test_detect_tech_stack_optimized_root_listing(mock_client: Repo360Client) -> None:
     """Test detect_tech_stack identifies tech stack from single root contents call."""
     inspector = RepoInspector(client=mock_client)
 
@@ -141,7 +141,7 @@ def test_detect_tech_stack_optimized_root_listing(mock_client: GHECClient) -> No
         assert "Fastapi" in stack["frameworks"]
 
 
-def test_extract_org_from_path(mock_client: GHECClient) -> None:
+def test_extract_org_from_path(mock_client: Repo360Client) -> None:
     """Verify endpoint path parsing extracts organization login."""
     assert mock_client._extract_org_from_path("/repos/fintech-core/payment-gateway") == "fintech-core"
     assert mock_client._extract_org_from_path("/orgs/fintech-core/rulesets") == "fintech-core"
@@ -150,8 +150,8 @@ def test_extract_org_from_path(mock_client: GHECClient) -> None:
     assert mock_client._extract_org_from_path("/user/repos") is None
 
 
-def test_client_routes_org_to_auth(mock_client: GHECClient) -> None:
-    """Verify that GHECClient automatically extracts org and passes to auth.get_auth_headers."""
+def test_client_routes_org_to_auth(mock_client: Repo360Client) -> None:
+    """Verify that Repo360Client automatically extracts org and passes to auth.get_auth_headers."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.headers = {"x-ratelimit-remaining": "4900"}
@@ -165,7 +165,7 @@ def test_client_routes_org_to_auth(mock_client: GHECClient) -> None:
         )
 
 
-def test_list_installation_repositories_with_explicit_installation_id(mock_client: GHECClient) -> None:
+def test_list_installation_repositories_with_explicit_installation_id(mock_client: Repo360Client) -> None:
     """Verify list_installation_repositories passes installation_id down to client."""
     inspector = RepoInspector(client=mock_client)
     mock_payload = {

@@ -1,4 +1,4 @@
-"""Resilient GHEC REST and GraphQL API client.
+"""Resilient Repo360 REST and GraphQL API client.
 
 Production-grade rate-limit resilience for 1000+ repositories:
 - Primary Rate Limit monitoring (x-ratelimit-remaining / x-ratelimit-reset)
@@ -22,8 +22,8 @@ from ..auth.github_app_auth import GitHubAppAuth
 logger = logging.getLogger(__name__)
 
 
-class GHECClient:
-    """Production-grade GHEC API client with enterprise rate-limit handling for 1000+ repos."""
+class Repo360Client:
+    """Production-grade GitHub API client with enterprise rate-limit handling for 1000+ repos."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class GHECClient:
         backoff_factor: float = 1.5,
         adaptive_delay_ms: int = 20,
     ) -> None:
-        """Initialize GHEC API Client.
+        """Initialize Repo360 API Client.
 
         Args:
             auth: Authenticated GitHubAppAuth instance.
@@ -170,7 +170,7 @@ class GHECClient:
         installation_id: Optional[int | str] = None,
         org: Optional[str] = None,
     ) -> Optional[Any]:
-        """Perform an authenticated GET request against GHEC API with full rate-limit resilience.
+        """Perform an authenticated GET request against GitHub API with full rate-limit resilience.
 
         Dynamically extracts and injects per-organization GitHub App installation tokens
         to support multi-organization environments without authorization errors.
@@ -302,7 +302,7 @@ class GHECClient:
         installation_id: Optional[int | str] = None,
         org: Optional[str] = None,
     ) -> List[Any]:
-        """Paginate through a GHEC list endpoint supporting up to 5,000 items.
+        """Paginate through a GitHub API list endpoint supporting up to 5,000 items.
 
         Args:
             path: API path.

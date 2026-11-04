@@ -1,14 +1,14 @@
-"""Automated 1-Click GitHub App Registration Wizard for GHEC.
+"""Automated 1-Click GitHub App Registration Wizard for Repo360.
 
 Uses GitHub's official App Manifest flow:
 1. Prompts interactively for target Organization and parameters.
 2. Spins up a temporary local HTTP server on http://localhost:8989
 3. Opens browser to GitHub with pre-configured read-only governance permissions
 4. Exchanges authorization code via POST /app-manifests/{code}/conversions
-5. Automatically saves the RSA private key (.pem) to user config (~/.ghec-advisor/secrets/)
+5. Automatically saves the RSA private key (.pem) to user config (~/.repo360/secrets/)
 6. Opens GitHub App installation page and automatically fetches Installation ID
 7. Prompts user to select AI Remediation Provider and enter API key
-8. Persists all credentials securely to ~/.ghec-advisor/config.json (Zero manual setup required!)
+8. Persists all credentials securely to ~/.repo360/config.json (Zero manual setup required!)
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
 
         if parsed_url.path == "/":
             # Auto-assign unique name using target_org to avoid global GitHub App name collisions
-            default_name = f"GH-Governance-Advisor-{self.target_org}" if self.target_org else "GH-Governance-Advisor"
+            default_name = f"Repo360-{self.target_org}" if self.target_org else "Repo360"
             active_name = self.app_name or default_name
             manifest_json = json.dumps(get_manifest(self.github_domain, app_name=active_name))
             form_action = (
@@ -195,7 +195,7 @@ def run_wizard(
         github_domain = f"https://{github_domain}"
     api_domain = resolve_api_base_url(github_domain)
 
-    default_name = f"GH-Governance-Advisor-{org_name}" if org_name else "GH-Governance-Advisor"
+    default_name = f"Repo360-{org_name}" if org_name else "Repo360"
     chosen_name = app_name or default_name
 
     ManifestCallbackHandler.target_org = org_name
@@ -205,7 +205,7 @@ def run_wizard(
     ManifestCallbackHandler.conversion_result = None
 
     print("\n" + "=" * 65)
-    print("  GHEC GOVERNANCE ADVISOR - 1-CLICK GITHUB APP SETUP")
+    print("  REPO360 - 1-CLICK GITHUB APP SETUP")
     print("=" * 65)
     print(f"Target Organization: {org_name}")
     print(f"App Name:            {chosen_name}")
@@ -237,7 +237,7 @@ def run_wizard(
     pem_key = result.get("pem", "")
     install_url = f"{github_domain}/organizations/{org_name}/settings/apps/{app_slug}/installations"
 
-    # 1. Automatically save private key to ~/.ghec-advisor/secrets/
+    # 1. Automatically save private key to ~/.repo360/secrets/
     key_path = save_private_key(pem_key, app_slug=app_slug)
     # Also save a copy to ./secrets/ if local workspace exists
     try:
@@ -370,10 +370,10 @@ def run_wizard(
         from .validator import ConfigValidator
         env_path = os.path.abspath(".env")
         if os.path.isfile(env_path):
-            ConfigValidator.update_env_file("GHEC_APP_ID", str(app_id), env_path)
+            ConfigValidator.update_env_file("REPO360_APP_ID", str(app_id), env_path)
             if installation_id:
-                ConfigValidator.update_env_file("GHEC_APP_INSTALLATION_ID", str(installation_id), env_path)
-            ConfigValidator.update_env_file("GHEC_APP_PRIVATE_KEY_PATH", key_path, env_path)
+                ConfigValidator.update_env_file("REPO360_APP_INSTALLATION_ID", str(installation_id), env_path)
+            ConfigValidator.update_env_file("REPO360_APP_PRIVATE_KEY_PATH", key_path, env_path)
             if llm_enabled and llm_api_key:
                 if llm_provider == "gemini":
                     ConfigValidator.update_env_file("GEMINI_API_KEY", llm_api_key, env_path)
