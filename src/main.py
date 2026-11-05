@@ -498,7 +498,17 @@ def _run_cli() -> int:
 
     parser = argparse.ArgumentParser(
         prog="repo360 audit",
-        description="Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence"
+        description="Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence",
+    )
+    parser.add_argument(
+        "--org",
+        default="",
+        help="Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). If omitted, all organizations with GitHub App installed are audited.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="",
+        help="Directory where output Excel reports will be saved (defaults to ./repo360-output).",
     )
     parser.add_argument(
         "--app-config",
@@ -509,26 +519,6 @@ def _run_cli() -> int:
         "--advisory-config",
         default="",
         help="Optional path to custom policy JSON (defaults to all 14 enterprise best practices enabled).",
-    )
-    parser.add_argument(
-        "--inventory",
-        default="",
-        help="Optional path to custom repository inventory CSV.",
-    )
-    parser.add_argument(
-        "--auto-discover",
-        action="store_true",
-        help="Force auto-discovery of all repositories accessible to the GitHub App.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="",
-        help="Directory where output reports will be saved (defaults to ./repo360-output).",
-    )
-    parser.add_argument(
-        "--org",
-        default="",
-        help="Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). If omitted, all organizations with GitHub App installed are audited.",
     )
     parser.add_argument(
         "--mock-mode",
@@ -547,7 +537,6 @@ def _run_cli() -> int:
     try:
         app_cfg_path = _resolve_config_path(args.app_config, "config/config.json")
         advisory_cfg_path = _resolve_config_path(args.advisory_config, "config/advisory.json")
-        inventory_path = _resolve_config_path(args.inventory, "") if args.inventory else None
 
         app_config = (
             ConfigValidator.load_and_validate_json(app_cfg_path)
@@ -559,11 +548,7 @@ def _run_cli() -> int:
             if advisory_cfg_path
             else ConfigValidator.get_default_advisory_config()
         )
-        targets = (
-            []
-            if args.auto_discover or not inventory_path
-            else ConfigValidator.load_and_validate_repos_csv(inventory_path, optional=True)
-        )
+        targets = []
     except Exception as err:
         logger.error("Configuration validation failed: %s", err)
         _print_failure_banner(f"Configuration validation failed: {err}")

@@ -21,10 +21,6 @@ inputs:
     description: "Path to custom advisory policy JSON (optional: uses built-in defaults if omitted)"
     required: false
     default: ""
-  inventory:
-    description: "Path to repository inventory CSV (optional: audits all accessible repos if omitted)"
-    required: false
-    default: ""
   org:
     description: "Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). Audits all installed organizations if omitted."
     required: false
@@ -123,18 +119,12 @@ runs:
         if [ -n "${{ inputs.advisory_config }}" ]; then
           CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
         fi
-        if [ -n "${{ inputs.inventory }}" ]; then
-          CMD="$CMD --inventory ${{ inputs.inventory }}"
-        fi
         eval $CMD
 
         if [ "${{ inputs.collect_activity }}" = "true" ]; then
           ACT_CMD="repo360 activity --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
           if [ -n "${{ inputs.org }}" ]; then
             ACT_CMD="$ACT_CMD --org ${{ inputs.org }}"
-          fi
-          if [ -n "${{ inputs.inventory }}" ]; then
-            ACT_CMD="$ACT_CMD --repos ${{ inputs.inventory }}"
           fi
           eval $ACT_CMD
         fi
@@ -143,9 +133,6 @@ runs:
           RUN_CMD="repo360 runners --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
           if [ -n "${{ inputs.org }}" ]; then
             RUN_CMD="$RUN_CMD --org ${{ inputs.org }}"
-          fi
-          if [ -n "${{ inputs.inventory }}" ]; then
-            RUN_CMD="$RUN_CMD --repos ${{ inputs.inventory }}"
           fi
           eval $RUN_CMD
         fi

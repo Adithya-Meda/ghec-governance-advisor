@@ -11,14 +11,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from ..activity.collector import resolve_activity_targets
-from ..activity.models import ActivityConfig
 from ..auth.github_app_auth import GitHubAppAuth
 from ..common.client import ResilientGitHubClient
 from ..common.inventory import (
     discover_app_organizations,
     discover_app_repositories,
-    load_flexible_repo_entries,
 )
 from ..credentials import resolve_runtime_credentials
 from .collector import build_runner_rows, collect_runners_and_metrics
@@ -92,14 +89,9 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
         help="Optional comma-separated list of organizations to analyze. If omitted, all installed organizations are analyzed.",
     )
     parser.add_argument(
-        "--repos",
-        default="",
-        help="Optional path to custom repository inventory CSV. If omitted, all accessible repositories are auto-discovered from the GitHub App.",
-    )
-    parser.add_argument(
         "--output-dir",
         default="./repo360-output",
-        help="Target directory for generated workbooks and data feeds (default: ./repo360-output).",
+        help="Target directory for generated Excel workbooks (default: ./repo360-output).",
     )
     parser.add_argument(
         "--lookback-days",
@@ -123,11 +115,6 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
         type=int,
         default=6,
         help="Concurrent repository worker threads (default: 6).",
-    )
-    parser.add_argument(
-        "--config",
-        default="",
-        help="Optional path to custom JSON configuration file.",
     )
 
     args = parser.parse_args(argv)
@@ -167,39 +154,23 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
     failures: List[Tuple[str, str]] = []
     metadata_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
-    discovered_orgs: List[str] = []
-    if args.repos:
-        repos_path = os.path.abspath(args.repos)
-        if not os.path.isfile(repos_path):
-            print(f"\n\033[91m[FAIL] Repository inventory file not found: {repos_path}\033[0m\n")
-            return 1
-        try:
-            entries = load_flexible_repo_entries(repos_path)
-        except Exception as exc:
-            print(f"\n\033[91m[FAIL] Invalid inventory CSV: {exc}\033[0m\n")
-            return 1
-        print(f"\033[96m[INFO]\033[0m Resolving target repositories from {repos_path}...")
-        act_cfg = ActivityConfig(lookback_days=cfg.lookback_days, include_archived=args.include_archived)
-        targets, failures, metadata_cache = resolve_activity_targets(client, entries, act_cfg)
-        orgs = sorted({org for org, _ in targets}, key=str.lower)
-    else:
-        org_filter = [o.strip() for o in args.org.split(",") if o.strip()] if args.org else None
-        discovered_orgs = discover_app_organizations(auth=auth, org_filter=org_filter)
-        if not discovered_orgs:
-            print("\033[91m[FAIL] No active GitHub App installations found for the specified organization(s).\033[0m\n")
-            return 1
+    org_filter = [o.strip() for o in args.org.split(",") if o.strip()] if args.org else None
+    discovered_orgs = discover_app_organizations(auth=auth, org_filter=org_filter)
+    if not discovered_orgs:
+        print("\033[91m[FAIL] No active GitHub App installations found for the specified organization(s).\033[0m\n")
+        return 1
 
-        org_list_str = ", ".join(discovered_orgs)
-        print(f"\033[96m[INFO]\033[0m Discovered {len(discovered_orgs)} organization(s) with GitHub App installed: {org_list_str}")
-        print(f"\033[96m[INFO]\033[0m Auto-discovering repositories directly from GitHub App installations...")
-        targets, metadata_cache = discover_app_repositories(
-            auth=auth,
-            client=client,
-            org_filter=org_filter,
-            include_archived=args.include_archived,
-            include_forks=True,
-        )
-        orgs = sorted(set(discovered_orgs) | {org for org, _ in targets}, key=str.lower)
+    org_list_str = ", ".join(discovered_orgs)
+    print(f"\033[96m[INFO]\033[0m Discovered {len(discovered_orgs)} organization(s) with GitHub App installed: {org_list_str}")
+    print(f"\033[96m[INFO]\033[0m Auto-discovering repositories directly from GitHub App installations...")
+    targets, metadata_cache = discover_app_repositories(
+        auth=auth,
+        client=client,
+        org_filter=org_filter,
+        include_archived=args.include_archived,
+        include_forks=True,
+    )
+    orgs = sorted(set(discovered_orgs) | {org for org, _ in targets}, key=str.lower)
 
     if not targets and not orgs:
         print("\033[91m[FAIL] No repositories or organizations discovered to analyze.\033[0m\n")
