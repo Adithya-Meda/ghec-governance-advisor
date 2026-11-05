@@ -37,9 +37,9 @@ All permissions are read-only:
 | `issues: read` | Repository |
 | `pull_requests: read` | Repository |
 | `metadata: read` | Repository |
-| `organization_administration: read` | Organization |
+| `administration: read` | Organization |
 | `members: read` | Organization |
-| `organization_self_hosted_runners: read` | Organization |
+| `self_hosted_runners: read` | Organization |
 
 ---
 
