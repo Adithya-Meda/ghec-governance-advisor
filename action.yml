@@ -17,10 +17,6 @@ inputs:
     description: "GitHub API Base URL: https://api.github.com for GitHub.com, https://api.<enterprise>.ghe.com for ghe.com, or https://ghe.company.com/api/v3 for GHES."
     required: false
     default: "https://api.github.com"
-  advisory_config:
-    description: "Path to custom advisory policy JSON (optional: uses built-in defaults if omitted)"
-    required: false
-    default: ""
   org:
     description: "Optional comma-separated list of organizations to audit (e.g. 'org1,org2'). Audits all installed organizations if omitted."
     required: false
@@ -115,9 +111,6 @@ runs:
         CMD="repo360 audit --output-dir ${{ inputs.output_dir }}"
         if [ -n "${{ inputs.org }}" ]; then
           CMD="$CMD --org ${{ inputs.org }}"
-        fi
-        if [ -n "${{ inputs.advisory_config }}" ]; then
-          CMD="$CMD --advisory-config ${{ inputs.advisory_config }}"
         fi
         eval $CMD
 

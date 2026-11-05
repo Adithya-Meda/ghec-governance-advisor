@@ -35,17 +35,11 @@ def test_unknown_subcommand_returns_error(capsys) -> None:
 
 
 def test_main_mock_mode_execution() -> None:
-    """Run full CLI execution in mock mode with custom override configs."""
+    """Run full CLI execution in mock mode."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        custom_advisory = os.path.join(temp_dir, "custom_advisory.json")
-        with open(custom_advisory, "w", encoding="utf-8") as f:
-            f.write('{"enabled_checks": {"org_admin": {"rulesets_adoption": true}}}')
-
         test_args = [
             "repo360",
             "audit",
-            "--advisory-config",
-            custom_advisory,
             "--output-dir",
             temp_dir,
             "--mock-mode",

@@ -339,27 +339,6 @@ def run_audit(
     return results
 
 
-def _resolve_config_path(custom_path: str, default_relative: str) -> Optional[str]:
-    """Resolve configuration file path, checking explicit input, CWD, then package bundle."""
-    if custom_path:
-        if os.path.isfile(custom_path):
-            return custom_path
-        raise FileNotFoundError(f"Specified configuration file not found: {custom_path}")
-
-    # Check current working directory
-    cwd_path = os.path.join(os.getcwd(), default_relative)
-    if os.path.isfile(cwd_path):
-        return cwd_path
-
-    # Check bundled package directory
-    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    bundled_path = os.path.join(pkg_root, default_relative)
-    if os.path.isfile(bundled_path):
-        return bundled_path
-
-    return None
-
-
 def _print_root_help() -> int:
     """Print the top-level Repo360 CLI commands and overview."""
     print("""Repo360 - 360-Degree Platform Governance, Compliance & Engineering Intelligence
@@ -511,16 +490,6 @@ def _run_cli() -> int:
         help="Directory where output Excel reports will be saved (defaults to ./repo360-output).",
     )
     parser.add_argument(
-        "--app-config",
-        default="",
-        help="Optional path to custom app runtime configuration JSON (defaults to built-in enterprise settings).",
-    )
-    parser.add_argument(
-        "--advisory-config",
-        default="",
-        help="Optional path to custom policy JSON (defaults to all 14 enterprise best practices enabled).",
-    )
-    parser.add_argument(
         "--mock-mode",
         action="store_true",
         help="Run in offline mock mode using simulated data for verification.",
@@ -528,31 +497,14 @@ def _run_cli() -> int:
     parser.add_argument(
         "--require-ai",
         action="store_true",
-        help="Strict mode: Abort audit immediately if AI Remediation Engine cannot authenticate.",
+        help="Stop the audit if AI authentication fails, instead of falling back to standard built-in recommendations.",
     )
 
     args = parser.parse_args()
 
-    # Resolve config paths (explicit CLI > CWD > bundled package defaults > built-in defaults)
-    try:
-        app_cfg_path = _resolve_config_path(args.app_config, "config/config.json")
-        advisory_cfg_path = _resolve_config_path(args.advisory_config, "config/advisory.json")
-
-        app_config = (
-            ConfigValidator.load_and_validate_json(app_cfg_path)
-            if app_cfg_path
-            else ConfigValidator.get_default_app_config()
-        )
-        advisory_config = (
-            ConfigValidator.load_and_validate_json(advisory_cfg_path, is_advisory=True)
-            if advisory_cfg_path
-            else ConfigValidator.get_default_advisory_config()
-        )
-        targets = []
-    except Exception as err:
-        logger.error("Configuration validation failed: %s", err)
-        _print_failure_banner(f"Configuration validation failed: {err}")
-        return 1
+    app_config = ConfigValidator.get_default_app_config()
+    advisory_config = ConfigValidator.get_default_advisory_config()
+    targets = []
 
     # Determine output directory
     output_dir = args.output_dir or app_config.get("reporting", {}).get("output_directory", "./repo360-output")
