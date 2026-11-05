@@ -49,6 +49,30 @@ def test_main_route_runners():
             assert mock_run.called
 
 
+def test_main_route_finops():
+    with patch.object(sys, "argv", ["repo360", "finops", "--help"]):
+        with patch("src.finops.cli.run_finops_cli", return_value=0) as mock_fin:
+            ret = main()
+            assert ret == 0
+            assert mock_fin.called
+
+
+def test_main_route_dora():
+    with patch.object(sys, "argv", ["repo360", "dora", "--help"]):
+        with patch("src.dora.cli.run_dora_cli", return_value=0) as mock_dor:
+            ret = main()
+            assert ret == 0
+            assert mock_dor.called
+
+
+def test_main_route_bypass():
+    with patch.object(sys, "argv", ["repo360", "bypass", "--help"]):
+        with patch("src.bypass.cli.run_bypass_cli", return_value=0) as mock_byp:
+            ret = main()
+            assert ret == 0
+            assert mock_byp.called
+
+
 def test_main_route_upgrade():
     with patch.object(sys, "argv", ["repo360", "upgrade", "--dry-run"]):
         with patch("src.upgrade.run_upgrade_cli", return_value=0) as mock_up:

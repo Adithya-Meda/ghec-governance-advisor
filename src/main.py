@@ -351,6 +351,9 @@ Commands:
   setup       Launch 1-click GitHub App setup wizard & credential configuration
   activity    Analyze contributor cadence, active days, seat allocation, and commit/PR metrics
   runners     Inspect Actions self-hosted runner fleet usage, compute hours, and queue wait times
+  finops      Profile per-repository storage quotas, Actions artifacts, and 90-day retention waste
+  dora        Calculate cross-organization DORA & delivery flow metrics (DF, Lead Time, CFR, MTTR)
+  bypass      Audit secret scanning push-protection overrides and branch ruleset bypass events
   upgrade     Upgrade Repo360 CLI to the latest version directly from GitHub
 
 Options:
@@ -411,6 +414,33 @@ def main() -> int:
             logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
             return 130
 
+    if subcmd in ("finops", "storage", "artifacts"):
+        sys.argv.pop(1)
+        from .finops.cli import run_finops_cli
+        try:
+            return run_finops_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            return 130
+
+    if subcmd in ("dora", "flow", "dora-metrics"):
+        sys.argv.pop(1)
+        from .dora.cli import run_dora_cli
+        try:
+            return run_dora_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            return 130
+
+    if subcmd in ("bypass", "bypasses", "push-protection"):
+        sys.argv.pop(1)
+        from .bypass.cli import run_bypass_cli
+        try:
+            return run_bypass_cli()
+        except KeyboardInterrupt:
+            logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+            return 130
+
     if subcmd in ("upgrade", "update"):
         sys.argv.pop(1)
         from .upgrade import run_upgrade_cli
@@ -450,6 +480,36 @@ def run_runners_cli() -> int:
     from .runners.cli import run_runners_cli as _run_run
     try:
         return _run_run()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def run_finops_cli() -> int:
+    """Dedicated entrypoint for repo360 finops standalone execution."""
+    from .finops.cli import run_finops_cli as _run_fin
+    try:
+        return _run_fin()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def run_dora_cli() -> int:
+    """Dedicated entrypoint for repo360 dora standalone execution."""
+    from .dora.cli import run_dora_cli as _run_dor
+    try:
+        return _run_dor()
+    except KeyboardInterrupt:
+        logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
+        return 130
+
+
+def run_bypass_cli() -> int:
+    """Dedicated entrypoint for repo360 bypass standalone execution."""
+    from .bypass.cli import run_bypass_cli as _run_byp
+    try:
+        return _run_byp()
     except KeyboardInterrupt:
         logger.warning("\nExecution cancelled by user (Ctrl+C). Exiting...")
         return 130

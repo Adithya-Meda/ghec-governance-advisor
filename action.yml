@@ -53,6 +53,18 @@ inputs:
     description: "Collect Actions self-hosted runner fleet metrics ('true' or 'false')"
     required: false
     default: "false"
+  collect_finops:
+    description: "Profile per-repository storage quotas and Actions artifacts ('true' or 'false')"
+    required: false
+    default: "false"
+  collect_dora:
+    description: "Calculate cross-organization DORA delivery flow metrics ('true' or 'false')"
+    required: false
+    default: "false"
+  collect_bypass:
+    description: "Audit secret scanning push-protection overrides and ruleset bypasses ('true' or 'false')"
+    required: false
+    default: "false"
   lookback_days:
     description: "Lookback window in days for user activity and runner metrics"
     required: false
@@ -128,6 +140,30 @@ runs:
             RUN_CMD="$RUN_CMD --org ${{ inputs.org }}"
           fi
           eval $RUN_CMD
+        fi
+
+        if [ "${{ inputs.collect_finops }}" = "true" ]; then
+          FIN_CMD="repo360 finops --output-dir ${{ inputs.output_dir }}"
+          if [ -n "${{ inputs.org }}" ]; then
+            FIN_CMD="$FIN_CMD --org ${{ inputs.org }}"
+          fi
+          eval $FIN_CMD
+        fi
+
+        if [ "${{ inputs.collect_dora }}" = "true" ]; then
+          DOR_CMD="repo360 dora --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.org }}" ]; then
+            DOR_CMD="$DOR_CMD --org ${{ inputs.org }}"
+          fi
+          eval $DOR_CMD
+        fi
+
+        if [ "${{ inputs.collect_bypass }}" = "true" ]; then
+          BYP_CMD="repo360 bypass --output-dir ${{ inputs.output_dir }} --lookback-days ${{ inputs.lookback_days }}"
+          if [ -n "${{ inputs.org }}" ]; then
+            BYP_CMD="$BYP_CMD --org ${{ inputs.org }}"
+          fi
+          eval $BYP_CMD
         fi
 
     - name: "Publish Audit Reports Artifact"

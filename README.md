@@ -1,6 +1,6 @@
 # Repo360
 
-Platform governance, compliance, engineering intelligence, and infrastructure metrics for GitHub organizations. Evaluates repositories against security baselines, analyzes contributor activity, monitors Actions self-hosted runner fleets, and generates executive multi-tab Excel workbooks.
+Platform governance, compliance, engineering intelligence, and infrastructure metrics for GitHub organizations. Evaluates repositories against security baselines, analyzes contributor activity, monitors Actions self-hosted runner fleets, profiles storage and artifact costs (FinOps), tracks cross-organization DORA delivery metrics, audits security and ruleset bypasses, and generates executive multi-tab Excel workbooks.
 
 > [!WARNING]
 > **Advisory Only:** Remediation snippets and policies are advisory. Validate suggested changes in non-production environments before applying.
@@ -37,8 +37,10 @@ All permissions are read-only:
 | `issues: read` | Repository |
 | `pull_requests: read` | Repository |
 | `metadata: read` | Repository |
+| `secret_scanning_alerts: read` | Repository |
 | `administration: read` | Organization |
 | `members: read` | Organization |
+| `packages: read` | Organization |
 | `self_hosted_runners: read` | Organization |
 
 ---
@@ -74,6 +76,18 @@ repo360 activity --org <your-org>
 # Actions Self-Hosted Runners Analytics (Executive Excel workbook)
 repo360 runners
 repo360 runners --org <your-org>
+
+# Per-Repository Storage Quota & Artifact Profiler (Executive Excel workbook)
+repo360 finops
+repo360 finops --org <your-org>
+
+# Cross-Organization DORA & Delivery Flow Metrics (Executive Excel workbook)
+repo360 dora
+repo360 dora --org <your-org>
+
+# Consolidated Push Protection & Ruleset Bypass Ledger (Executive Excel workbook)
+repo360 bypass
+repo360 bypass --org <your-org>
 ```
 
 All reports are written to `./repo360-output/`.
@@ -100,6 +114,15 @@ Install the registered GitHub App across multiple organizations in your enterpri
 
   # Analyze runner fleet across specific organizations
   repo360 runners --org OrgAlpha,OrgBeta
+
+  # Profile storage and workflow artifacts across specific organizations
+  repo360 finops --org OrgAlpha,OrgBeta
+
+  # Measure DORA delivery metrics across specific organizations
+  repo360 dora --org OrgAlpha,OrgBeta
+
+  # Audit security and ruleset bypasses across specific organizations
+  repo360 bypass --org OrgAlpha,OrgBeta
   ```
 
 ---
@@ -141,6 +164,9 @@ jobs:
           ai_api_key: ${{ secrets.AI_API_KEY }} # Required for AI-tailored remediations in audit
           collect_activity: "true" # Scrapes contributor commit, PR, review, and issue metrics
           collect_runners: "true" # Audits self-hosted runner fleet compute, queues, and SLAs
+          collect_finops: "true" # Profiles per-repository storage quotas, artifacts, and caches
+          collect_dora: "true" # Calculates cross-org DORA flow metrics (DF, Lead Time, CFR, MTTR)
+          collect_bypass: "true" # Audits secret scanning push protection & ruleset bypass ledgers
 ```
 
 ---
@@ -152,6 +178,9 @@ jobs:
 - **Developer Enablement:** Dev containers (`devcontainer.json`), GitHub Copilot instructions, standardized issue & PR templates, pre-commit hooks.
 - **User Activity Collection:** Contributor commit cadence, pull requests opened/merged, code review participation, issue discussions, active days, and adoption metrics.
 - **Runner Fleet Intelligence:** Actions self-hosted runner availability, ephemeral provisioning, execution compute hours, queue latency, and SLA breach tracking (>60s).
+- **FinOps & Storage Profiling:** Per-repository Git storage quotas, GitHub Actions workflow artifacts, default 90-day retention waste detection, stale Actions caches (>30d unaccessed), and container/package registries.
+- **DORA & Flow Metrics:** Cross-organization Deployment Frequency (DF), Lead Time for Changes (LTTC), Change Failure Rate (CFR), and Mean Time to Recovery (MTTR) with Google DORA performance tier classification (Elite, High, Medium, Low).
+- **Security & Policy Bypass Ledger:** Consolidated push protection bypass records (with secret type, bypassing actor, timestamp, and justification reason) and branch ruleset override audit history.
 
 ---
 
