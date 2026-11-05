@@ -51,6 +51,26 @@ EMPTY_CELL_MESSAGES = {
     "Days Since Last Activity": "No activity",
 }
 
+LEFT_HEADERS = {
+    "Metric",
+    "Scope",
+    "Category",
+    "Organization",
+    "Repository",
+    "User",
+    "Definition",
+    "Issue Description",
+    "Target Item",
+    "Teams",
+    "CODEOWNERS Path",
+    "What this means",
+    "Topic",
+    "Runner Name",
+    "Last Job Name",
+    "Labels",
+    "Group",
+}
+
 CENTER_HEADERS = {
     "Value",
     "Fleet Aggregate",
@@ -117,12 +137,12 @@ def write_table(
             if banded:
                 cell.fill = BAND_FILL
             val_str = str(value).strip() if value is not None else ""
-            if (
+            if header in LEFT_HEADERS:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            elif (
                 isinstance(value, (int, float))
                 or header in CENTER_HEADERS
                 or val_str in ("Yes", "No", "Unknown", "None", "Complete", "Partial", "N/A", "Online", "Offline", "Idle", "Busy")
-                or (val_str.endswith("s") and len(val_str) <= 12)
-                or (val_str.endswith("%") and len(val_str) <= 12)
                 or value in EMPTY_CELL_MESSAGES.values()
             ):
                 cell.alignment = CENTER

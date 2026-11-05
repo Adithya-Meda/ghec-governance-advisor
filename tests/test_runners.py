@@ -158,8 +158,9 @@ def test_write_runners_workbook_and_csv(tmp_path):
     # Find Online Runners row and verify value has no percentage and is centered
     online_row_val = None
     for r in range(5, 16):
-        if summary.cell(row=r, column=1).value == "Online Runners":
+        metric_name = summary.cell(row=r, column=1).value
+        assert summary.cell(row=r, column=1).alignment.horizontal == "left"
+        if metric_name == "Online Runners":
             online_row_val = summary.cell(row=r, column=2).value
             assert summary.cell(row=r, column=2).alignment.horizontal == "center"
-            break
     assert online_row_val == 1  # integer count, no percentage string like "1 (100.0%)"

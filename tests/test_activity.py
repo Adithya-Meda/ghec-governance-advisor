@@ -150,6 +150,12 @@ def test_write_activity_workbook_and_csv(tmp_path):
     assert summary["B5"].value == "1.5s"
     assert summary["B5"].alignment.horizontal == "center"
 
+    # Verify Metric names ending in 's' (e.g. Commits, Active Users) stay left-aligned
+    for r in range(5, 20):
+        val = summary.cell(row=r, column=1).value
+        if val in ("Commits", "Active Users", "Low Users", "PR Reviews", "Total Duration"):
+            assert summary.cell(row=r, column=1).alignment.horizontal == "left"
+
 
 def test_format_error_permission_mapping():
     from src.activity.collector import _format_error
