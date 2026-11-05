@@ -100,6 +100,21 @@ def test_build_runner_rows():
     assert o_row[6] == 100.0  # Availability %
     assert o_row[7] == 1  # Currently busy
 
+    # Multi-org test including an organization with 0 runners
+    _, multi_org_rows = build_runner_rows(
+        runners=[runner],
+        runner_metrics={("fintech-org", "linux-runner-1"): metrics},
+        org_runner_metrics={"fintech-org": metrics},
+        orgs=["fintech-org", "empty-org"],
+    )
+    assert len(multi_org_rows) == 2
+    org_names = [row[0] for row in multi_org_rows]
+    assert "fintech-org" in org_names
+    assert "empty-org" in org_names
+    empty_row = next(row for row in multi_org_rows if row[0] == "empty-org")
+    assert empty_row[1] == 0  # 0 runners
+    assert empty_row[6] == "N/A"  # availability N/A
+
 
 def test_write_runners_workbook_and_csv(tmp_path):
     runner = RunnerInfo(

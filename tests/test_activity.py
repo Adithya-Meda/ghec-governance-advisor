@@ -104,6 +104,14 @@ def test_build_rows_and_org_rows():
     assert org_rows[0][1] == 1  # 1 repo
     assert org_rows[0][2] == 1  # 1 contributor
 
+    # Test with all_orgs including an empty/dormant org
+    multi_org_rows = build_org_rows(user_rows, results, all_orgs=["acme-org", "dormant-org"])
+    assert len(multi_org_rows) == 2
+    assert multi_org_rows[0][0] == "acme-org"
+    assert multi_org_rows[1][0] == "dormant-org"
+    assert multi_org_rows[1][1] == 0  # 0 repos
+    assert multi_org_rows[1][2] == 0  # 0 contributors
+
 
 def test_write_activity_workbook_and_csv(tmp_path):
     now = datetime(2026, 10, 15, tzinfo=timezone.utc)

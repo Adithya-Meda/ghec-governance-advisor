@@ -139,6 +139,7 @@ def print_terminal_scorecard(
     report_paths: Dict[str, str],
     ai_engine: Optional[AIEngine] = None,
     elapsed_seconds: float = 0.0,
+    orgs: Optional[List[str]] = None,
 ) -> None:
     """Print an executive color-coded scorecard to stdout."""
     total = len(results)
@@ -170,7 +171,7 @@ def print_terminal_scorecard(
     print(f"\n{C}{'=' * 76}{X}")
     print(f"{B}{C}   REPO360 PLATFORM GOVERNANCE & ENGINEERING SCORECARD{X}")
     print(f"{C}{'=' * 76}{X}")
-    unique_orgs = sorted({target.org_name for target in targets})
+    unique_orgs = sorted(set(orgs or []) | {target.org_name for target in targets})
     org_summary = (
         f"{len(unique_orgs)} ({', '.join(unique_orgs)})"
         if len(unique_orgs) <= 4
@@ -247,6 +248,7 @@ def run_audit(
     targets: List[RepoTarget],
     advisory_config: Dict[str, Any],
     ai_engine: Optional[AIEngine] = None,
+    orgs: Optional[List[str]] = None,
 ) -> List[CheckResult]:
     """Execute all enabled checks across target organizations and repositories."""
     results: List[CheckResult] = []
@@ -254,7 +256,7 @@ def run_audit(
     thresholds = advisory_config.get("policy_thresholds", {})
 
     # 1. Evaluate Organization-Level Checks (once per unique org)
-    unique_orgs = sorted({target.org_name for target in targets})
+    unique_orgs = sorted(set(orgs or []) | {target.org_name for target in targets})
     for org in unique_orgs:
         D = "\033[2m"
         X = "\033[0m"
@@ -784,7 +786,12 @@ def _run_cli() -> int:
                                 )
                             )
 
-                unique_discovered_orgs = sorted({t.org_name for t in targets})
+                installed_org_logins = [
+                    inst.get("account", {}).get("login", "")
+                    for inst in active_installations
+                    if inst.get("account", {}).get("login")
+                ]
+                unique_discovered_orgs = sorted(set(installed_org_logins) | {t.org_name for t in targets})
                 repo_noun = "repository" if len(targets) == 1 else "repositories"
                 logger.info(
                     "Auto-discovered %d accessible %s across %d organization(s): %s.",
@@ -793,12 +800,14 @@ def _run_cli() -> int:
                     len(unique_discovered_orgs),
                     ", ".join(unique_discovered_orgs),
                 )
+            else:
+                installed_org_logins = sorted({t.org_name for t in targets})
 
-            if not targets:
+            if not targets and not installed_org_logins:
                 logger.warning("No repositories found to audit. Ensure the GitHub App is installed on repositories.")
                 return 0
 
-            results = run_audit(inspector, targets, advisory_config, ai_engine=ai_engine)
+            results = run_audit(inspector, targets, advisory_config, ai_engine=ai_engine, orgs=installed_org_logins)
         except Exception as err:
             logger.error("Execution failed: %s", err)
             _print_failure_banner(f"Audit execution error: {err}")
@@ -808,7 +817,7 @@ def _run_cli() -> int:
     executive_summary = ""
     if not args.mock_mode and ai_engine.is_available() and targets:
         logger.info("Synthesizing Executive Risk & Governance Narrative via AI...")
-        unique_orgs = sorted({t.org_name for t in targets})
+        unique_orgs = sorted(set(installed_org_logins if 'installed_org_logins' in locals() else []) | {t.org_name for t in targets})
         executive_summary = ai_engine.generate_executive_summary(results, ", ".join(unique_orgs))
     elif args.mock_mode:
         executive_summary = (
@@ -831,7 +840,14 @@ def _run_cli() -> int:
         "xlsx": os.path.abspath(xlsx_path),
     }
     elapsed = time.time() - start_time
-    print_terminal_scorecard(results, targets, report_paths, ai_engine=ai_engine, elapsed_seconds=elapsed)
+    print_terminal_scorecard(
+        results,
+        targets,
+        report_paths,
+        ai_engine=ai_engine,
+        elapsed_seconds=elapsed,
+        orgs=installed_org_logins if 'installed_org_logins' in locals() else None,
+    )
 
     return 0
 

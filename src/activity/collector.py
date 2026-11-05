@@ -542,7 +542,11 @@ def build_rows(
     return user_rows, repo_rows
 
 
-def build_org_rows(user_rows: List[list], results: Dict[Tuple[str, str], Dict[str, Activity]]) -> List[list]:
+def build_org_rows(
+    user_rows: List[list],
+    results: Dict[Tuple[str, str], Dict[str, Activity]],
+    all_orgs: Optional[List[str]] = None,
+) -> List[list]:
     """Aggregate per-organization contributor metrics and status distribution."""
     repo_counts = Counter(org for org, _ in results)
     stats: Dict[str, Counter] = defaultdict(Counter)
@@ -553,7 +557,7 @@ def build_org_rows(user_rows: List[list], results: Dict[Tuple[str, str], Dict[st
         if row[TOTAL_IDX] > 0:
             stats[org]["contributors"] += 1
 
-    orgs = sorted(set(repo_counts) | set(stats), key=str.lower)
+    orgs = sorted(set(all_orgs or []) | set(repo_counts) | set(stats), key=str.lower)
     return [
         [
             org,

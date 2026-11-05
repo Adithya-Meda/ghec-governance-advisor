@@ -91,3 +91,26 @@ def test_discover_app_repositories_direct():
     assert len(targets_filtered) == 2
     assert ("fintech-core", "fintech-core-repo-1") in targets_filtered
     assert ("fintech-core", "fintech-core-repo-2") in targets_filtered
+
+
+def test_discover_app_organizations():
+    from unittest.mock import MagicMock
+    from src.common.inventory import discover_app_organizations
+
+    mock_auth = MagicMock()
+    mock_auth.discover_installations.return_value = [
+        {"id": 101, "account": {"login": "TestOrg-10"}},
+        {"id": 102, "account": {"login": "DefaultOrg24"}},
+    ]
+
+    # Discover all
+    orgs = discover_app_organizations(auth=mock_auth)
+    assert orgs == ["defaultorg24", "testorg-10"] or orgs == ["DefaultOrg24", "TestOrg-10"]
+
+    # Filtered
+    filtered = discover_app_organizations(auth=mock_auth, org_filter=["TestOrg-10"])
+    assert filtered == ["TestOrg-10"]
+
+    # None found
+    none_found = discover_app_organizations(auth=mock_auth, org_filter=["non-existent"])
+    assert none_found == []

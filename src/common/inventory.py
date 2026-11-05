@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import csv
+import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger("repo360.inventory")
 
 ORG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
@@ -120,6 +123,37 @@ def load_flexible_repo_entries(path: str | os.PathLike) -> List[RepoEntry]:
     return entries
 
 
+def discover_app_organizations(
+    auth: Any,
+    org_filter: Optional[List[str]] = None,
+) -> List[str]:
+    """Discover all organizations where the GitHub App is actively installed.
+
+    Args:
+        auth: GitHubAppAuth instance with credentials.
+        org_filter: Optional list of organization names to restrict discovery to.
+
+    Returns:
+        Sorted list of discovered organization logins.
+    """
+    installations = auth.discover_installations()
+    if not installations:
+        return []
+
+    org_set = {o.strip().lower() for o in org_filter if o.strip()} if org_filter else None
+    discovered: List[str] = []
+
+    for inst in installations:
+        org_login = inst.get("account", {}).get("login", "")
+        if not org_login:
+            continue
+        if org_set and org_login.lower() not in org_set:
+            continue
+        discovered.append(org_login)
+
+    return sorted(discovered, key=str.lower)
+
+
 def discover_app_repositories(
     auth: Any,
     client: Any,
@@ -158,17 +192,30 @@ def discover_app_repositories(
         if org_set and org_login.lower() not in org_set:
             continue
 
+        active_count = 0
+        archived_count = 0
+        fork_count = 0
+
         try:
             # Query accessible repositories for this installation directly from GitHub API
             for repo_data in client.paginate_enveloped(org_login, "/installation/repositories", "repositories"):
                 repo_name = repo_data.get("name")
                 if not repo_name:
                     continue
-                if repo_data.get("archived") and not include_archived:
+                is_archived = bool(repo_data.get("archived"))
+                is_fork = bool(repo_data.get("fork"))
+
+                if is_archived:
+                    archived_count += 1
+                if is_fork:
+                    fork_count += 1
+
+                if is_archived and not include_archived:
                     continue
-                if repo_data.get("fork") and not include_forks:
+                if is_fork and not include_forks:
                     continue
 
+                active_count += 1
                 targets.append((org_login, repo_name))
                 metadata_cache[(org_login.casefold(), repo_name.casefold())] = repo_data
         except Exception:
@@ -178,14 +225,34 @@ def discover_app_repositories(
                     repo_name = repo_data.get("name")
                     if not repo_name:
                         continue
-                    if repo_data.get("archived") and not include_archived:
+                    is_archived = bool(repo_data.get("archived"))
+                    is_fork = bool(repo_data.get("fork"))
+
+                    if is_archived:
+                        archived_count += 1
+                    if is_fork:
+                        fork_count += 1
+
+                    if is_archived and not include_archived:
                         continue
-                    if repo_data.get("fork") and not include_forks:
+                    if is_fork and not include_forks:
                         continue
 
+                    active_count += 1
                     targets.append((org_login, repo_name))
                     metadata_cache[(org_login.casefold(), repo_name.casefold())] = repo_data
             except Exception:
                 pass
+
+        if active_count > 0:
+            logger.info("Organization '%s': discovered %d active repositories.", org_login, active_count)
+        elif archived_count > 0:
+            logger.info(
+                "Organization '%s': %d repositories found (all archived - pass --include-archived to analyze).",
+                org_login,
+                archived_count,
+            )
+        else:
+            logger.info("Organization '%s': 0 repositories discovered.", org_login)
 
     return targets, metadata_cache

@@ -15,7 +15,12 @@ from typing import Dict, List, Optional, Tuple
 
 from ..auth.github_app_auth import GitHubAppAuth
 from ..common.client import ResilientGitHubClient
-from ..common.inventory import RepoEntry, discover_app_repositories, load_flexible_repo_entries
+from ..common.inventory import (
+    RepoEntry,
+    discover_app_organizations,
+    discover_app_repositories,
+    load_flexible_repo_entries,
+)
 from ..credentials import resolve_runtime_credentials
 from .collector import (
     build_management_tables,
@@ -177,6 +182,7 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     failures: List[Tuple[str, str]] = []
     metadata_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
+    discovered_orgs: List[str] = []
     if args.repos:
         repos_path = os.path.abspath(args.repos)
         if not os.path.isfile(repos_path):
@@ -189,8 +195,16 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
             return 1
         print(f"\033[96m[INFO]\033[0m Resolving target repositories from {repos_path}...")
         targets, failures, metadata_cache = resolve_activity_targets(client, entries, cfg)
+        orgs = sorted({org for org, _ in targets}, key=str.lower)
     else:
         org_filter = [o.strip() for o in args.org.split(",") if o.strip()] if args.org else None
+        discovered_orgs = discover_app_organizations(auth=auth, org_filter=org_filter)
+        if not discovered_orgs:
+            print("\033[91m[FAIL] No active GitHub App installations found for the specified organization(s).\033[0m\n")
+            return 1
+
+        org_list_str = ", ".join(discovered_orgs)
+        print(f"\033[96m[INFO]\033[0m Discovered {len(discovered_orgs)} organization(s) with GitHub App installed: {org_list_str}")
         print(f"\033[96m[INFO]\033[0m Auto-discovering repositories directly from GitHub App installations...")
         targets, metadata_cache = discover_app_repositories(
             auth=auth,
@@ -199,12 +213,12 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
             include_archived=cfg.include_archived,
             include_forks=cfg.include_forks,
         )
+        orgs = sorted(set(discovered_orgs) | {org for org, _ in targets}, key=str.lower)
 
-    if not targets:
-        print("\033[91m[FAIL] No repositories discovered or accessible to analyze.\033[0m\n")
+    if not targets and not orgs:
+        print("\033[91m[FAIL] No repositories or organizations discovered to analyze.\033[0m\n")
         return 1
 
-    orgs = sorted({org for org, _ in targets}, key=str.lower)
     print(f"\033[96m[INFO]\033[0m Scanning {len(targets)} repositories across {len(orgs)} organization(s)...")
 
     # Proactively verify required activity permissions across target organizations
@@ -259,7 +273,7 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
 
     results = {k: v.users for k, v in reports.items() if v.activity_complete}
     user_rows, repo_rows = build_rows(results, members, cfg, end, teams_by_user, org_team_complete)
-    org_rows = build_org_rows(user_rows, results)
+    org_rows = build_org_rows(user_rows, results, all_orgs=orgs)
 
     target_counts = Counter(org for org, _ in targets)
     failed_orgs = {f[0].split("/")[0] for f in failures if "/" in f[0]}
