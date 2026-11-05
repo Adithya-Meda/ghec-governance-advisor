@@ -1,8 +1,7 @@
-"""Excel and CSV reporters for Actions self-hosted runners analytics."""
+"""Excel reporter for Actions self-hosted runners analytics."""
 
 from __future__ import annotations
 
-import csv
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,15 +13,6 @@ from openpyxl.utils import get_column_letter
 from ..activity.models import DATE_FMT, IST
 from ..activity.reporter import NAVY, autofit, finalize_sheet, safe_cell, section_title, write_table
 from .models import ORG_RUNNER_HEADERS, RUNNER_HEADERS, RunnerInfo, RunnersConfig
-
-
-def write_runners_csv(path: Path, headers: Tuple[str, ...], rows: List[list]) -> None:
-    """Write runner inventory or org metrics to standard CSV."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(headers)
-        writer.writerows([safe_cell(val, headers[idx]) for idx, val in enumerate(row)] for row in rows)
 
 
 def write_runners_workbook(

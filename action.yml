@@ -30,11 +30,11 @@ inputs:
     required: false
     default: ""
   output_dir:
-    description: "Directory to save generated Excel, CSV, and HTML reports"
+    description: "Directory to save generated Excel reports"
     required: false
     default: "./repo360-output"
   upload_artifact:
-    description: "Automatically upload generated reports (.xlsx, .csv, .html) as a workflow artifact"
+    description: "Automatically upload generated reports (.xlsx) as a workflow artifact"
     required: false
     default: "true"
   artifact_name:

@@ -22,8 +22,6 @@ DEFAULT_APP_CONFIG: Dict[str, Any] = {
         "output_directory": "./repo360-output",
         "report_prefix": "repo360_audit",
         "generate_xlsx": True,
-        "generate_csv": True,
-        "generate_html": True,
     },
     "execution": {
         "concurrency_limit": 5,

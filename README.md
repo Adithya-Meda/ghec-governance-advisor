@@ -1,6 +1,6 @@
 # Repo360
 
-Platform governance, compliance, engineering intelligence, and infrastructure metrics for GitHub organizations. Evaluates repositories against security baselines, analyzes contributor activity, monitors Actions self-hosted runner fleets, and generates interactive HTML dashboards, executive Excel workbooks, and SIEM CSV feeds.
+Platform governance, compliance, engineering intelligence, and infrastructure metrics for GitHub organizations. Evaluates repositories against security baselines, analyzes contributor activity, monitors Actions self-hosted runner fleets, and generates executive multi-tab Excel workbooks.
 
 > [!WARNING]
 > **Advisory Only:** Remediation snippets and policies are advisory. Validate suggested changes in non-production environments before applying.
@@ -63,15 +63,15 @@ Registers the read-only GitHub App with all required permissions, downloads the 
 Repositories are automatically discovered directly from GitHub App installations across your organizations:
 
 ```bash
-# Governance Audit (HTML dashboard, executive Excel, SIEM CSV)
+# Governance Audit (Executive Excel workbook)
 repo360 audit
 repo360 audit --org <your-org>
 
-# User Activity & Contributor Metrics (Excel & CSV)
+# User Activity & Contributor Metrics (Executive Excel workbook)
 repo360 activity
 repo360 activity --org <your-org>
 
-# Actions Self-Hosted Runners Analytics (Excel & CSV)
+# Actions Self-Hosted Runners Analytics (Executive Excel workbook)
 repo360 runners
 repo360 runners --org <your-org>
 ```
@@ -89,7 +89,7 @@ Stored credentials and GitHub App private keys in `~/.repo360/` are automaticall
 ### Multi-Organization Support
 
 Install the registered GitHub App across multiple organizations in your enterprise using the same App ID and private key:
-- **Automatic Multi-Org Discovery:** Running `repo360 audit` (or `activity` / `runners`) automatically discovers every organization where the app is installed, provisions scoped tokens per organization, and aggregates findings into a single executive dashboard and SIEM export.
+- **Automatic Multi-Org Discovery:** Running `repo360 audit` (or `activity` / `runners`) automatically discovers every organization where the app is installed, provisions scoped tokens per organization, and aggregates findings into a single executive workbook.
 - **Targeted Organization Filtering:** Restrict scans to specific organizations on demand using `--org`:
   ```bash
   # Audit specific organizations

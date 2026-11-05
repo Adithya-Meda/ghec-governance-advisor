@@ -59,8 +59,8 @@ def test_main_mock_mode_execution() -> None:
         # Verify output files exist
         files = os.listdir(temp_dir)
         assert any(f.endswith(".xlsx") for f in files)
-        assert any(f.endswith(".csv") for f in files)
-        assert any(f.endswith(".html") for f in files)
+        assert not any(f.endswith(".csv") for f in files)
+        assert not any(f.endswith(".html") for f in files)
 
 
 def test_main_zero_config_execution() -> None:
@@ -86,8 +86,8 @@ def test_main_zero_config_execution() -> None:
             # Verify output files generated using 100% built-in defaults
             files = os.listdir(output_dir)
             assert any(f.endswith(".xlsx") for f in files)
-            assert any(f.endswith(".csv") for f in files)
-            assert any(f.endswith(".html") for f in files)
+            assert not any(f.endswith(".csv") for f in files)
+            assert not any(f.endswith(".html") for f in files)
         finally:
             os.chdir(old_cwd)
 
@@ -129,8 +129,8 @@ def test_multi_org_mock_mode_execution(capsys) -> None:
         # Verify output reports generated
         files = os.listdir(temp_dir)
         assert any(f.endswith(".xlsx") for f in files)
-        assert any(f.endswith(".csv") for f in files)
-        assert any(f.endswith(".html") for f in files)
+        assert not any(f.endswith(".csv") for f in files)
+        assert not any(f.endswith(".html") for f in files)
 
 
 def test_multi_org_live_filtering() -> None:

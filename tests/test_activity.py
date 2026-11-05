@@ -17,7 +17,7 @@ from src.activity.collector import (
     build_rows,
     classify,
 )
-from src.activity.reporter import write_activity_csv, write_activity_workbook
+from src.activity.reporter import write_activity_workbook
 
 
 def test_activity_model_methods():
@@ -122,8 +122,6 @@ def test_write_activity_workbook_and_csv(tmp_path):
     org_rows = build_org_rows(user_rows, {("acme-org", "service-a"): {"alice": act}})
 
     xlsx_path = tmp_path / "activity.xlsx"
-    csv_path = tmp_path / "activity.csv"
-
     write_activity_workbook(
         path=xlsx_path,
         cfg=cfg,
@@ -136,13 +134,9 @@ def test_write_activity_workbook_and_csv(tmp_path):
         repos_scanned=1,
         execution_duration=1.5,
     )
-    from src.activity.models import USER_HEADERS
-    write_activity_csv(csv_path, USER_HEADERS, user_rows)
 
     assert xlsx_path.is_file()
     assert xlsx_path.stat().st_size > 1000
-    assert csv_path.is_file()
-    assert "alice" in csv_path.read_text(encoding="utf-8")
 
     from openpyxl import load_workbook
     wb = load_workbook(xlsx_path)

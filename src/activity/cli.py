@@ -27,7 +27,7 @@ from .collector import (
     resolve_activity_targets,
 )
 from .models import ActivityConfig, RepositoryReport
-from .reporter import write_activity_csv, write_activity_workbook
+from .reporter import write_activity_workbook
 
 logger = logging.getLogger("repo360.activity")
 
@@ -37,7 +37,6 @@ def print_activity_scorecard(
     org_rows: List[list],
     repos_count: int,
     xlsx_path: Path,
-    csv_path: Path,
     elapsed_seconds: float,
 ) -> None:
     """Print an executive, color-coded terminal scorecard."""
@@ -73,7 +72,6 @@ def print_activity_scorecard(
     print(f"   {B}Duration              :{X} {elapsed_str}")
     print(f"{C}{'-' * 76}{X}")
     print(f"   {B}Executive Workbook (XLSX) :{X} {xlsx_path}")
-    print(f"   {B}Flat Activity Feed (CSV)  :{X} {csv_path}")
     print(f"{C}{'=' * 76}{X}")
     print(f"{G}{B}   [SUCCESS] Activity analysis completed across {len(user_rows)} users in {elapsed_str}.{X}\n")
 
@@ -286,7 +284,6 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     out_dir = Path(cfg.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     xlsx_path = out_dir / f"{cfg.file_prefix}_{stamp}.xlsx"
-    csv_path = out_dir / f"{cfg.file_prefix}_{stamp}.csv"
 
     elapsed = time.time() - start_time
     write_activity_workbook(
@@ -302,15 +299,12 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
         management_tables=management_tables,
         execution_duration=elapsed,
     )
-    from .models import USER_HEADERS
-    write_activity_csv(csv_path, USER_HEADERS, user_rows)
 
     print_activity_scorecard(
         user_rows=user_rows,
         org_rows=org_rows,
         repos_count=len(targets),
         xlsx_path=xlsx_path,
-        csv_path=csv_path,
         elapsed_seconds=elapsed,
     )
     return 0

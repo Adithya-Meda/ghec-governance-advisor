@@ -1,13 +1,11 @@
-"""Unit tests for Excel, CSV, and HTML report generators."""
+"""Unit tests for Excel report generator."""
 
 import os
 import tempfile
 import openpyxl
 import pytest
 
-from src.reporters.csv_reporter import CSVReporter
 from src.reporters.excel_reporter import ExcelReporter
-from src.reporters.html_reporter import HTMLReporter
 from tests.conftest import create_mock_results
 from src.validator import RepoTarget
 
@@ -99,76 +97,8 @@ def test_excel_reporter_generation(mock_results: list) -> None:
             os.remove(temp_path)
 
 
-def test_csv_reporter_generation(mock_results: list) -> None:
-    """Verify flat CSV output format includes AI classification columns."""
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv", encoding="utf-8") as f:
-        temp_path = f.name
-
-    try:
-        reporter = CSVReporter()
-        saved_path = reporter.generate(mock_results, temp_path)
-        assert os.path.exists(saved_path)
-
-        with open(saved_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        assert len(lines) > 1
-        header_line = lines[0]
-        assert "recommendation_source" in header_line
-        assert "ai_enriched" in header_line
-        assert "detected_stack" in header_line
-        assert "remediation_cluster_key" in header_line
-        assert "target_config_file" in header_line
-        assert "remediation_code_after" in header_line
-        assert "remediation_command" not in header_line
-
-        full_content = "".join(lines)
-        assert "AI_TAILORED" in full_content
-        assert "STANDARD_RULE" in full_content
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-
-def test_html_reporter_generation(mock_results: list) -> None:
-    """Verify HTML report includes AI classification, filter buttons, and KPI cards."""
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
-        temp_path = f.name
-
-    try:
-        reporter = HTMLReporter()
-        executive_summary = "Organization requires immediate enforcement of branch rulesets."
-        saved_path = reporter.generate(mock_results, temp_path, executive_summary)
-        assert os.path.exists(saved_path)
-
-        with open(saved_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        assert "Repo360 Platform Governance & Intelligence Report" in content or "Repo360" in content
-        assert "Compliance Score" in content
-        assert "AI Remediations" in content
-        assert "Consolidated Fleet Playbook" in content
-        assert "Repository Drill-Down" in content
-        assert "playbook-view-container" in content
-        assert "repo-view-container" in content
-        assert "repo-chip" in content
-        assert "Affected Fleet Scope:" in content
-        assert "AI Tailored Only" in content
-        assert "Standard Rules Only" in content
-        assert 'data-source="ai"' in content
-        assert 'data-source="standard"' in content
-        assert "badge-ai" in content
-        assert "diff-container" in content
-        assert "AI-Synthesized Configuration" in content
-        assert "CLI Remediation" not in content
-        assert "Audit Run Generated:" in content
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-
 def test_formula_injection_defense() -> None:
-    """Verify spreadsheet formula injection (CWE-1236) elements are neutralized with single quotes."""
+    """Verify spreadsheet formula injection (CWE-1236) elements are neutralized with single quotes in Excel."""
     from src.checks.base import CheckResult, CheckStatus, CheckSeverity, Persona
 
     injected_result = CheckResult(
@@ -186,23 +116,6 @@ def test_formula_injection_defense() -> None:
         org_name="=MALICIOUS_ORG",
         repo_name="@malicious_repo",
     )
-
-    # Test CSV
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv", encoding="utf-8") as f:
-        csv_path = f.name
-    try:
-        CSVReporter().generate([injected_result], csv_path)
-        with open(csv_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "'=MALICIOUS_ORG" in content
-        assert "'@malicious_repo" in content
-        assert "'+Security" in content
-        assert "'-old" in content
-        assert "'@calc" in content
-        assert "'=cmd|'/C calc'!A0" in content
-    finally:
-        if os.path.exists(csv_path):
-            os.remove(csv_path)
 
     # Test Excel
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f:

@@ -1,8 +1,7 @@
-"""Excel and CSV reporters for Repo360 user activity analysis."""
+"""Excel reporter for Repo360 user activity analysis."""
 
 from __future__ import annotations
 
-import csv
 import re
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -191,15 +190,6 @@ def section_title(ws, row: int, title: str) -> int:
     cell = ws.cell(row=row, column=1, value=title)
     cell.font = Font(bold=True, size=12, color=NAVY)
     return row + 1
-
-
-def write_activity_csv(path: Path, headers: Tuple[str, ...], rows: List[list]) -> None:
-    """Write user activity records to standard SIEM-compatible CSV."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(headers)
-        writer.writerows([safe_cell(val, headers[idx]) for idx, val in enumerate(row)] for row in rows)
 
 
 def write_activity_workbook(

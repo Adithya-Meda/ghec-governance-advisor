@@ -26,9 +26,7 @@ from .checks import (
 )
 from .collector.client import Repo360Client
 from .collector.repo_inspector import RepoInspector
-from .reporters.csv_reporter import CSVReporter
 from .reporters.excel_reporter import ExcelReporter
-from .reporters.html_reporter import HTMLReporter
 from .validator import ConfigValidator, RepoTarget
 
 try:
@@ -189,9 +187,7 @@ def print_terminal_scorecard(
     if elapsed_seconds > 0:
         print(f"   {B}Execution Duration   :{X} {elapsed_str}")
     print(f"{C}{'-' * 76}{X}")
-    print(f"   {B}Interactive Dashboard (HTML) :{X} {report_paths.get('html', '')}")
-    print(f"   {B}Executive Workbook   (XLSX) :{X} {report_paths.get('xlsx', '')}")
-    print(f"   {B}Flat SIEM Feed       (CSV)  :{X} {report_paths.get('csv', '')}")
+    print(f"   {B}Executive Workbook (XLSX) :{X} {report_paths.get('xlsx', '')}")
     print(f"{C}{'=' * 76}{X}")
     repo_noun = "repository" if len(targets) == 1 else "repositories"
     org_noun = "organization" if len(unique_orgs) == 1 else "organizations"
@@ -824,25 +820,15 @@ def _run_cli() -> int:
     prefix = app_config.get("reporting", {}).get("report_prefix", "repo360_audit")
 
     xlsx_path = os.path.join(output_dir, f"{prefix}_{timestamp}.xlsx")
-    csv_path = os.path.join(output_dir, f"{prefix}_{timestamp}.csv")
-    html_path = os.path.join(output_dir, f"{prefix}_{timestamp}.html")
 
     active_model = ai_engine.model_name if (ai_engine and ai_engine.is_available()) else ""
 
     logger.info("Generating Excel Report: %s", xlsx_path)
     ExcelReporter().generate(results, xlsx_path, executive_summary=executive_summary, model_name=active_model)
 
-    logger.info("Generating CSV Report: %s", csv_path)
-    CSVReporter().generate(results, csv_path, executive_summary=executive_summary, model_name=active_model)
-
-    logger.info("Generating Interactive HTML Report: %s", html_path)
-    HTMLReporter().generate(results, html_path, executive_summary=executive_summary, model_name=active_model)
-
     # Render Color-Coded Terminal Scorecard
     report_paths = {
-        "html": os.path.abspath(html_path),
         "xlsx": os.path.abspath(xlsx_path),
-        "csv": os.path.abspath(csv_path),
     }
     elapsed = time.time() - start_time
     print_terminal_scorecard(results, targets, report_paths, ai_engine=ai_engine, elapsed_seconds=elapsed)

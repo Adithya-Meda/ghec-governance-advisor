@@ -11,7 +11,7 @@ from src.runners.models import (
     RunnersConfig,
 )
 from src.runners.collector import build_runner_rows
-from src.runners.reporter import write_runners_csv, write_runners_workbook
+from src.runners.reporter import write_runners_workbook
 
 
 def test_runner_job_metrics_calculations():
@@ -130,7 +130,6 @@ def test_write_runners_workbook_and_csv(tmp_path):
     cfg = RunnersConfig(output_dir=str(tmp_path))
     now = datetime(2026, 10, 20, tzinfo=timezone.utc)
     xlsx_path = tmp_path / "runners.xlsx"
-    csv_path = tmp_path / "runners.csv"
 
     write_runners_workbook(
         path=xlsx_path,
@@ -142,12 +141,9 @@ def test_write_runners_workbook_and_csv(tmp_path):
         failures=[],
         execution_duration=2.0,
     )
-    write_runners_csv(csv_path, RUNNER_HEADERS, runner_rows)
 
     assert xlsx_path.is_file()
     assert xlsx_path.stat().st_size > 1000
-    assert csv_path.is_file()
-    assert "k8s-pod-runner" in csv_path.read_text(encoding="utf-8")
 
     from openpyxl import load_workbook
     wb = load_workbook(xlsx_path)

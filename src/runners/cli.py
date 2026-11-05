@@ -19,7 +19,7 @@ from ..common.inventory import discover_app_repositories, load_flexible_repo_ent
 from ..credentials import resolve_runtime_credentials
 from .collector import build_runner_rows, collect_runners_and_metrics
 from .models import ORG_RUNNER_HEADERS, RUNNER_HEADERS, RunnersConfig
-from .reporter import write_runners_csv, write_runners_workbook
+from .reporter import write_runners_workbook
 
 logger = logging.getLogger("repo360.runners")
 
@@ -28,7 +28,6 @@ def print_runners_scorecard(
     runner_rows: List[list],
     org_runner_rows: List[list],
     xlsx_path: Path,
-    csv_path: Path,
     elapsed_seconds: float,
 ) -> None:
     """Print an executive color-coded scorecard to stdout."""
@@ -73,7 +72,6 @@ def print_runners_scorecard(
     print(f"   {B}Duration                :{X} {elapsed_str}")
     print(f"{C}{'-' * 76}{X}")
     print(f"   {B}Executive Workbook (XLSX) :{X} {xlsx_path}")
-    print(f"   {B}Fleet Inventory Feed (CSV):{X} {csv_path}")
     print(f"{C}{'=' * 76}{X}")
     print(f"{G}{B}   [SUCCESS] Runner analysis completed across {total_runners} runners in {elapsed_str}.{X}\n")
 
@@ -209,7 +207,6 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
     out_dir = Path(cfg.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     xlsx_path = out_dir / f"{cfg.file_prefix}_{stamp}.xlsx"
-    csv_path = out_dir / f"{cfg.file_prefix}_{stamp}.csv"
 
     elapsed = time.time() - start_time
     write_runners_workbook(
@@ -222,13 +219,11 @@ def run_runners_cli(argv: Optional[List[str]] = None) -> int:
         failures,
         execution_duration=elapsed,
     )
-    write_runners_csv(csv_path, RUNNER_HEADERS, runner_rows)
 
     print_runners_scorecard(
         runner_rows=runner_rows,
         org_runner_rows=org_runner_rows,
         xlsx_path=xlsx_path,
-        csv_path=csv_path,
         elapsed_seconds=elapsed,
     )
     return 0
