@@ -29,19 +29,19 @@ Platform governance, compliance, engineering intelligence, and infrastructure me
 
 All permissions are read-only:
 
-| Permission | Scope |
-| :--- | :--- |
-| `actions: read` | Repository |
-| `administration: read` | Repository |
-| `contents: read` | Repository |
-| `issues: read` | Repository |
-| `pull_requests: read` | Repository |
-| `metadata: read` | Repository |
-| `secret_scanning_alerts: read` | Repository |
-| `administration: read` | Organization |
-| `members: read` | Organization |
-| `packages: read` | Organization |
-| `self_hosted_runners: read` | Organization |
+| Permission | Scope | Feature |
+| :--- | :--- | :--- |
+| `actions: read` | Repository | `audit`, `runners`, `finops`, `dora` |
+| `administration: read` | Repository | `audit`, `runners`, `bypass` |
+| `contents: read` | Repository | `audit`, `activity`, `dora` |
+| `issues: read` | Repository | `activity` |
+| `metadata: read` | Repository | `audit`, `activity`, `runners`, `finops`, `dora`, `bypass` |
+| `packages: read` | Repository | `finops` |
+| `pull_requests: read` | Repository | `activity` |
+| `secret_scanning_alerts: read` | Repository | `bypass` |
+| `administration: read` | Organization | `audit` |
+| `members: read` | Organization | `audit`, `activity` |
+| `self_hosted_runners: read` | Organization | `audit`, `runners` |
 
 ---
 

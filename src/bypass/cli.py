@@ -160,6 +160,17 @@ def run_bypass_cli(argv: Optional[List[str]] = None) -> int:
         print("\033[91m[FAIL] No repositories or organizations discovered to analyze.\033[0m\n")
         return 1
 
+    # Proactively verify secret scanning alert permissions
+    for org_name in orgs:
+        perms = auth.get_installation_permissions(org_name)
+        if perms and perms.get("secret_scanning_alerts") not in ("read", "write"):
+            print(
+                f"\033[93m[WARN]\033[0m GitHub App on '{org_name}' is missing: secret_scanning_alerts: read.\n"
+                f"       Push protection bypass detection requires 'secret_scanning_alerts: read' permission.\n"
+                f"       1. In GitHub App Settings -> Permissions & events -> Repository permissions -> set 'Secret scanning alerts' to Read-only.\n"
+                f"       2. Accept updated permissions at: https://github.com/organizations/{org_name}/settings/installations\n"
+            )
+
     print(f"\033[96m[INFO]\033[0m Auditing push protection exemptions and branch ruleset overrides across {len(orgs)} org(s)...")
 
     profiles = collect_bypass_data(client, orgs, targets, since, cfg, metadata_cache)

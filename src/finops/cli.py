@@ -160,6 +160,17 @@ def run_finops_cli(argv: Optional[List[str]] = None) -> int:
         print("\033[91m[FAIL] No repositories or organizations discovered to analyze.\033[0m\n")
         return 1
 
+    # Proactively verify packages permissions
+    for org_name in orgs:
+        perms = auth.get_installation_permissions(org_name)
+        if perms and perms.get("packages") not in ("read", "write"):
+            print(
+                f"\033[93m[WARN]\033[0m GitHub App on '{org_name}' is missing permission: packages: read.\n"
+                f"       Container (Docker / GHCR) tracking requires 'packages: read' permission.\n"
+                f"       1. In GitHub App Settings -> Permissions & events -> Repository permissions -> set 'Packages' to Read-only.\n"
+                f"       2. Accept updated permissions at: https://github.com/organizations/{org_name}/settings/installations\n"
+            )
+
     print(f"\033[96m[INFO]\033[0m Profiling repository storage, workflow artifacts, and caches across {len(orgs)} organization(s)...")
 
     profiles, org_packages = collect_finops_data(client, orgs, targets, cfg, metadata_cache)
