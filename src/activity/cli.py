@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ from ..common.client import ResilientGitHubClient
 from ..common.inventory import RepoEntry, discover_app_repositories, load_flexible_repo_entries
 from ..credentials import resolve_runtime_credentials
 from .collector import (
+    build_management_tables,
     build_org_rows,
     build_rows,
     collect_repository,
@@ -261,6 +263,26 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
     user_rows, repo_rows = build_rows(results, members, cfg, end, teams_by_user, org_team_complete)
     org_rows = build_org_rows(user_rows, results)
 
+    target_counts = Counter(org for org, _ in targets)
+    failed_orgs = {f[0].split("/")[0] for f in failures if "/" in f[0]}
+    organization_status = {
+        org: (
+            len([key for key in reports if key[0] == org]) == target_counts.get(org, 0)
+            and org in members
+            and org not in failed_orgs
+            and org_team_complete.get(org, False)
+            and all(not result.errors for (owner, _), result in reports.items() if owner == org)
+        )
+        for org in orgs
+    }
+    management_tables = build_management_tables(
+        reports=reports,
+        members=members,
+        since=since,
+        end=end,
+        organization_status=organization_status,
+    )
+
     out_dir = Path(cfg.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     xlsx_path = out_dir / f"{cfg.file_prefix}_{stamp}.xlsx"
@@ -277,6 +299,7 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
         org_rows,
         failures,
         len(targets),
+        management_tables=management_tables,
         execution_duration=elapsed,
     )
     from .models import USER_HEADERS

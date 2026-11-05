@@ -23,9 +23,12 @@ from .models import (
     METRIC_KEYS,
     METRIC_LABELS,
     METRICS,
+    MGMT_KPI_HEADERS,
+    REPO_INVENTORY_HEADERS,
     STATUS_IDX,
     STATUS_ORDER,
     STATUSES,
+    TOP_REPOS_HEADERS,
     TOTAL_IDX,
     Activity,
     ActivityConfig,
@@ -564,6 +567,315 @@ def build_org_rows(user_rows: List[list], results: Dict[Tuple[str, str], Dict[st
         ]
         for org in orgs
     ]
+
+
+def build_management_tables(
+    reports: Dict[Tuple[str, str], RepositoryReport],
+    members: Dict[str, Set[str]],
+    since: datetime,
+    end: datetime,
+    organization_status: Optional[Dict[str, bool]] = None,
+) -> Dict[str, Tuple[Tuple[str, ...], List[list]]]:
+    """Construct Repository Inventory, Top Active Repositories, and Management KPIs tables."""
+    tables: Dict[str, Tuple[Tuple[str, ...], List[list]]] = {}
+    inventory: List[list] = []
+    created_dates: Dict[Tuple[str, str], Optional[datetime]] = {}
+
+    for key, result in reports.items():
+        raw_created = result.metadata.get("created_at") if result.metadata else None
+        created_dates[key] = parse_ts(raw_created) if raw_created else None
+
+    for (org, repo), result in reports.items():
+        meta = result.metadata or {}
+        visibility = meta.get("visibility")
+        if not visibility:
+            visibility = "private" if meta.get("private") else ("public" if meta.get("private") is False else "Unknown")
+        visibility = str(visibility).lower()
+
+        events = [event for event in result.events if since <= event[2] <= end]
+        counts = Counter(metric for _, metric, _ in events)
+        contributors = {login for login, _, _ in events if login}
+
+        created_dt = created_dates.get((org, repo))
+        created_str = fmt_timestamp(created_dt) if created_dt else "Unknown"
+        new_in_period = "Yes" if created_dt and since <= created_dt <= end else "No"
+        archived = "Yes" if meta.get("archived") else "No"
+        default_branch = meta.get("default_branch", "")
+
+        if result.protected == "Yes":
+            protected_branches_str = "; ".join(result.protected_branches) if result.protected_branches else "Yes"
+        elif result.protected == "No":
+            protected_branches_str = "None"
+        else:
+            protected_branches_str = "Unknown"
+
+        activity_available = result.activity_complete
+        active_last_7 = (
+            ("Yes" if any(when >= end - timedelta(days=7) for _, _, when in result.events) else "No")
+            if activity_available
+            else "Unknown"
+        )
+        total_activities = len(events) if activity_available else "N/A"
+        active_contributors = len(contributors) if activity_available else "N/A"
+        metric_values = [counts[metric] if activity_available else "N/A" for metric in METRIC_KEYS]
+        merge_rate = round(result.cohort_merged / result.cohort_opened * 100, 2) if result.cohort_opened else "N/A"
+        avg_review_hours = round(sum(result.review_hours) / len(result.review_hours), 2) if result.review_hours else "N/A"
+        review_samples = len(result.review_hours)
+        coverage = "Complete" if activity_available and not result.errors else "Partial"
+
+        inventory.append([
+            org,
+            repo,
+            visibility,
+            created_str,
+            new_in_period,
+            archived,
+            default_branch,
+            protected_branches_str,
+            result.codeowners,
+            result.codeowners_path,
+            active_last_7,
+            total_activities,
+            active_contributors,
+            *metric_values,
+            merge_rate,
+            avg_review_hours,
+            review_samples,
+            coverage,
+        ])
+
+    tot_idx = REPO_INVENTORY_HEADERS.index("Total Activities")
+    inventory.sort(
+        key=lambda row: (
+            -(row[tot_idx] if isinstance(row[tot_idx], int) else -1),
+            str(row[0]).casefold(),
+            str(row[1]).casefold(),
+        )
+    )
+    tables["Repository Inventory"] = (REPO_INVENTORY_HEADERS, inventory)
+
+    # Top Active Repositories (Ranked top 10 per org)
+    top_rows: List[list] = []
+    inv_repo_idx = REPO_INVENTORY_HEADERS.index("Repository")
+    inv_tot_idx = tot_idx
+    inv_contrib_idx = REPO_INVENTORY_HEADERS.index("Active Contributors")
+    inv_last7_idx = REPO_INVENTORY_HEADERS.index("Activity Last 7 Days")
+    inv_cov_idx = REPO_INVENTORY_HEADERS.index("Coverage")
+
+    orgs_in_inventory = sorted({row[0] for row in inventory}, key=str.casefold)
+    for org in orgs_in_inventory:
+        org_repos = [row for row in inventory if row[0] == org]
+        org_repos.sort(
+            key=lambda row: (
+                -(row[inv_tot_idx] if isinstance(row[inv_tot_idx], int) else -1),
+                str(row[inv_repo_idx]).casefold(),
+            )
+        )
+        for rank, row in enumerate(org_repos[:10], start=1):
+            top_rows.append([
+                org,
+                rank,
+                row[inv_repo_idx],
+                row[inv_tot_idx],
+                row[inv_contrib_idx],
+                *(row[REPO_INVENTORY_HEADERS.index(label)] for label in METRIC_LABELS),
+                row[inv_last7_idx],
+                row[inv_cov_idx],
+            ])
+    tables["Top Active Repositories"] = (TOP_REPOS_HEADERS, top_rows)
+
+    # Management KPIs
+    kpis: List[list] = []
+    org_status = organization_status or {}
+    organizations = sorted({org for org, _ in reports} | set(members) | set(org_status), key=str.casefold)
+    month_start = end.astimezone(IST).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    for org in organizations:
+        selected = [result for (owner, _), result in reports.items() if owner.casefold() == org.casefold()]
+        events = [event for result in selected for event in result.events if since <= event[2] <= end]
+        counts = Counter(metric for _, metric, _ in events)
+        contributors = {login for login, _, _ in events if login}
+        org_members = {login.lower() for login in members.get(org, set())}
+        member_coverage = org in members
+        rolling = {
+            login
+            for result in selected
+            for login, _, when in result.events
+            if login and end - timedelta(days=30) <= when <= end
+        }
+        monthly = {
+            login
+            for result in selected
+            for login, _, when in result.events
+            if login and month_start <= when <= end
+        }
+        hours = [h for result in selected for h in result.review_hours]
+        opened = sum(result.cohort_opened for result in selected)
+        merged = sum(result.cohort_merged for result in selected)
+
+        def add(category: str, metric: str, value: Any, definition: str) -> None:
+            kpis.append([org, category, metric, value, definition])
+
+        # User Adoption
+        add(
+            "User Adoption",
+            "Current onboarded org members",
+            len(org_members) if member_coverage else "N/A",
+            "How many people are currently listed as members of this organization. This is not a paid-seat or sign-in count.",
+        )
+        add(
+            "User Adoption",
+            "Active onboarded members",
+            len(org_members & contributors) if member_coverage else "N/A",
+            "Current organization members who made at least one tracked contribution during this report period.",
+        )
+        add(
+            "User Adoption",
+            "Monthly active users (month to date)",
+            len(monthly),
+            "Distinct people with tracked activity so far this calendar month (IST), including people who are not members.",
+        )
+        add(
+            "User Adoption",
+            "Rolling 30-day active users",
+            len(rolling),
+            "Distinct people with tracked activity during the last 30 days, including non-members.",
+        )
+
+        # Repository Landscape
+        add(
+            "Repository Landscape",
+            "Repositories hosted (selected scope)",
+            len(selected),
+            "Repositories selected in inventory that this App can access. This may not include every repository in the enterprise.",
+        )
+        add(
+            "Repository Landscape",
+            "New repositories created",
+            sum(
+                bool(created and since <= created <= end)
+                for (owner, _), created in created_dates.items()
+                if owner.casefold() == org.casefold()
+            ),
+            "Selected repositories created during this period that still exist here. Deleted or transferred repositories are not counted.",
+        )
+        for visibility in ("private", "internal", "public"):
+            add(
+                "Repository Landscape",
+                f"{visibility.title()} repositories",
+                sum(
+                    (
+                        (item.metadata.get("visibility") or ("private" if item.metadata.get("private") else "public")).lower()
+                        if item.metadata
+                        else ""
+                    ) == visibility
+                    for item in selected
+                ),
+                f"Selected repositories currently set to {visibility} visibility.",
+            )
+
+        # Developer Activity
+        add(
+            "Developer Activity",
+            "Repositories active in last 7 days",
+            sum(any(when >= end - timedelta(days=7) for _, _, when in item.events) for item in selected),
+            "Repositories with at least one tracked contribution in the last seven days. This does not measure logins or every kind of push.",
+        )
+        add(
+            "Developer Activity",
+            "Total commit volume",
+            counts["commits"],
+            "Commit records on default branches during the report period, counted by author date. Some commits may not be linked to a GitHub user; the bot filter applies.",
+        )
+        add(
+            "Developer Activity",
+            "Active contributors",
+            len(contributors),
+            "Distinct GitHub users with at least one tracked contribution, including people outside the organization.",
+        )
+        add(
+            "Developer Activity",
+            "Average commits per active user",
+            round(counts["commits"] / len(contributors), 2) if contributors else "N/A",
+            "Default-branch commits divided by distinct active contributors. Unlinked commits can be included in the commit count but not the user count.",
+        )
+        add(
+            "Developer Activity",
+            "Top Active Repositories by Activity",
+            "See Top Active Repositories sheet",
+            "The sheet lists this organization's ten repositories with the most tracked events in the report period. It is an activity count, not a productivity score.",
+        )
+
+        # Collaboration
+        add(
+            "Collaboration",
+            "Pull requests created",
+            counts["prs_opened"],
+            "Pull requests opened during the report period.",
+        )
+        add(
+            "Collaboration",
+            "Pull requests merged",
+            counts["prs_merged"],
+            "Pull requests merged during the report period, even if they were opened earlier.",
+        )
+        add(
+            "Collaboration",
+            "PR merge rate (%)",
+            round(merged / opened * 100, 2) if opened else "N/A",
+            "Of the PRs opened during this period, the percentage merged by the report cutoff. Shows N/A if no PRs were opened.",
+        )
+        add(
+            "Collaboration",
+            "Code reviews completed",
+            counts["reviews"],
+            "Submitted pull-request reviews during the period. Draft reviews are excluded; submitted reviews count even if later dismissed.",
+        )
+        add(
+            "Collaboration",
+            "Average PR review turnaround (hours)",
+            round(sum(hours) / len(hours), 2) if hours else "N/A",
+            "Average time from opening a PR to its first submitted review by someone else. Unreviewed PRs are excluded; weekends and draft time count.",
+        )
+        add(
+            "Collaboration",
+            "First review sample PRs",
+            len(hours),
+            "Number of PRs used to calculate the average first-review time.",
+        )
+
+        # Security & Governance
+        for attribute, title in (("protected", "Repositories with branch protection"), ("codeowners", "Repositories with CODEOWNERS")):
+            add(
+                "Security & Governance",
+                title,
+                sum(getattr(item, attribute) == "Yes" for item in selected),
+                "Repositories with at least one protected branch." if attribute == "protected" else
+                "Repositories with a CODEOWNERS file in a recognized location on the default branch. The file's rules are not validated.",
+            )
+            add(
+                "Security & Governance",
+                f"{title} - unknown",
+                sum(getattr(item, attribute) == "Unknown" for item in selected),
+                "Repositories where GitHub did not provide enough information to confirm this check. They are not counted as having no protection/file.",
+            )
+
+        # Coverage
+        add(
+            "Coverage",
+            "Activity scans completed",
+            sum(item.activity_complete for item in selected),
+            "Number of this organization's selected repositories whose activity scan completed successfully.",
+        )
+        add(
+            "Coverage",
+            "Run status",
+            "Complete" if org_status.get(org, False) else "Partial",
+            "Complete means this organization's selected repositories and member list were collected without errors. A failure in another organization does not change this status.",
+        )
+
+    tables["Management KPIs"] = (MGMT_KPI_HEADERS, kpis)
+    return tables
 
 
 def load_history(path: Path) -> Dict[str, Any]:

@@ -170,3 +170,136 @@ def test_format_error_permission_mapping():
     generic_err = RuntimeError("Network timeout")
     msg_generic = _format_error("Commits", generic_err)
     assert "Commits: Network timeout" in msg_generic
+
+
+def test_build_management_tables_and_sheets(tmp_path):
+    from openpyxl import load_workbook
+    from src.activity.collector import build_management_tables
+    from src.activity.models import (
+        MGMT_KPI_HEADERS,
+        REPO_INVENTORY_HEADERS,
+        TOP_REPOS_HEADERS,
+        RepositoryReport,
+    )
+
+    now = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)
+    since = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+
+    report_a = RepositoryReport(
+        metadata={
+            "created_at": "2026-08-01T00:00:00Z",
+            "visibility": "private",
+            "archived": False,
+            "default_branch": "main",
+        },
+        protected="Yes",
+        protected_branches=("main",),
+        codeowners="Yes",
+        codeowners_path=".github/CODEOWNERS",
+        activity_complete=True,
+        cohort_opened=10,
+        cohort_merged=8,
+        review_hours=[2.5, 3.5],
+        events=[
+            ("alice", "commits", now),
+            ("alice", "prs_opened", now),
+            ("bob", "reviews", now),
+        ],
+    )
+
+    report_b = RepositoryReport(
+        metadata={
+            "created_at": "2025-01-01T00:00:00Z",
+            "visibility": "public",
+            "archived": False,
+            "default_branch": "master",
+        },
+        protected="No",
+        protected_branches=(),
+        codeowners="No",
+        codeowners_path="Not found",
+        activity_complete=True,
+        cohort_opened=0,
+        cohort_merged=0,
+        review_hours=[],
+        events=[],
+    )
+
+    reports = {
+        ("test-org", "repo-active"): report_a,
+        ("test-org", "repo-idle"): report_b,
+    }
+    members = {"test-org": {"alice", "charlie"}}
+    org_status = {"test-org": True}
+
+    tables = build_management_tables(
+        reports=reports,
+        members=members,
+        since=since,
+        end=now,
+        organization_status=org_status,
+    )
+
+    assert "Repository Inventory" in tables
+    assert "Top Active Repositories" in tables
+    assert "Management KPIs" in tables
+
+    inv_headers, inv_rows = tables["Repository Inventory"]
+    assert inv_headers == REPO_INVENTORY_HEADERS
+    assert len(inv_rows) == 2
+    # First row should be repo-active (3 total activities > 0)
+    assert inv_rows[0][0] == "test-org"
+    assert inv_rows[0][1] == "repo-active"
+    assert inv_rows[0][2] == "private"
+    assert inv_rows[0][4] == "Yes"  # New in period (created 2026-08-01)
+    assert inv_rows[0][7] == "main"  # Protected branches
+    assert inv_rows[0][8] == "Yes"  # CODEOWNERS present
+    assert inv_rows[0][11] == 3  # Total activities
+    assert inv_rows[0][12] == 2  # Active contributors (alice, bob)
+    assert inv_rows[0][14] == 1  # PRs opened
+    assert inv_rows[0][20] == 80.0  # Merge rate 8/10
+    assert inv_rows[0][21] == 3.0  # Avg review hours (2.5 + 3.5)/2
+    assert inv_rows[0][23] == "Complete"
+
+    top_headers, top_rows = tables["Top Active Repositories"]
+    assert top_headers == TOP_REPOS_HEADERS
+    assert len(top_rows) == 2
+    assert top_rows[0][1] == 1  # Rank 1
+    assert top_rows[0][2] == "repo-active"
+    assert top_rows[0][3] == 3  # Total activities
+
+    kpi_headers, kpi_rows = tables["Management KPIs"]
+    assert kpi_headers == MGMT_KPI_HEADERS
+    categories = {r[1] for r in kpi_rows}
+    assert "User Adoption" in categories
+    assert "Repository Landscape" in categories
+    assert "Developer Activity" in categories
+    assert "Collaboration" in categories
+    assert "Security & Governance" in categories
+    assert "Coverage" in categories
+
+    # Test writing to workbook
+    cfg = ActivityConfig(output_dir=str(tmp_path))
+    xlsx_path = tmp_path / "activity_with_management.xlsx"
+    write_activity_workbook(
+        path=xlsx_path,
+        cfg=cfg,
+        since=since,
+        end=now,
+        user_rows=[],
+        repo_rows=[],
+        org_rows=[],
+        failures=[],
+        repos_scanned=2,
+        management_tables=tables,
+    )
+
+    assert xlsx_path.is_file()
+    wb = load_workbook(xlsx_path)
+    sheet_names = wb.sheetnames
+    assert "Executive Summary" in sheet_names
+    assert "User Activity" in sheet_names
+    assert "Repository Detail" in sheet_names
+    assert "Repository Inventory" in sheet_names
+    assert "Top Active Repositories" in sheet_names
+    assert "Management KPIs" in sheet_names

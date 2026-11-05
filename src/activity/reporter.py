@@ -155,6 +155,7 @@ def write_activity_workbook(
     org_rows: List[list],
     failures: List[Tuple[str, str]],
     repos_scanned: int,
+    management_tables: Optional[Dict[str, Tuple[Tuple[str, ...], List[list]]]] = None,
     execution_duration: Optional[float] = None,
 ) -> None:
     """Generate high-fidelity executive Excel workbook for user activity and adoption trends."""
@@ -219,5 +220,61 @@ def write_activity_workbook(
     repo_ws = wb.create_sheet("Repository Detail")
     last_repo = write_table(repo_ws, 1, REPO_HEADERS, repo_rows, bar_col=REPO_HEADERS.index("Total Activities"))
     finalize_sheet(repo_ws, 1, last_repo, len(REPO_HEADERS), "D2")
+
+    # Executive Management Sheets
+    if management_tables:
+        for title, (headers, rows) in management_tables.items():
+            sheet = wb.create_sheet(title)
+            last = write_table(sheet, 1, headers, rows)
+            freeze = "C2" if title == "Repository Inventory" else ("D2" if title == "Top Active Repositories" else "B2")
+            finalize_sheet(sheet, 1, last, len(headers), freeze)
+            sheet.sheet_view.showGridLines = False
+
+            if title == "Repository Inventory":
+                colors = {
+                    "Yes": STATUS_STYLES["Active"],
+                    "No": STATUS_STYLES["Inactive"],
+                    "None": STATUS_STYLES["Inactive"],
+                    "Unknown": STATUS_STYLES["Moderate"],
+                    "Complete": STATUS_STYLES["Active"],
+                    "Partial": STATUS_STYLES["Moderate"],
+                }
+                for col_name in ("Protected Branches", "CODEOWNERS Present", "Coverage"):
+                    if col_name in headers:
+                        col_idx = headers.index(col_name) + 1
+                        for r_idx in range(2, last + 1):
+                            cell = sheet.cell(row=r_idx, column=col_idx)
+                            val = cell.value
+                            status = val if col_name != "Protected Branches" or val in {"None", "Unknown"} else "Yes"
+                            if status in colors:
+                                fill, font = colors[status]
+                                cell.fill = PatternFill("solid", fgColor=fill)
+                                cell.font = Font(bold=True, color=font)
+                if "Protected Branches" in headers:
+                    sheet.column_dimensions[get_column_letter(headers.index("Protected Branches") + 1)].width = 38
+                if "Total Activities" in headers and rows:
+                    col_letter = get_column_letter(headers.index("Total Activities") + 1)
+                    sheet.conditional_formatting.add(
+                        f"{col_letter}2:{col_letter}{last}",
+                        DataBarRule(start_type="min", end_type="max", color="5B9BD5"),
+                    )
+
+            elif title == "Top Active Repositories" and rows:
+                if "Total Activities" in headers:
+                    col_letter = get_column_letter(headers.index("Total Activities") + 1)
+                    sheet.conditional_formatting.add(
+                        f"{col_letter}2:{col_letter}{last}",
+                        DataBarRule(start_type="min", end_type="max", color="5B9BD5"),
+                    )
+
+            elif title == "Management KPIs":
+                desc_letter = get_column_letter(len(headers))
+                sheet.column_dimensions[desc_letter].width = 95
+                val_col_idx = headers.index("Value") + 1 if "Value" in headers else None
+                for r_idx in range(2, last + 1):
+                    for c_idx in range(1, len(headers) + 1):
+                        cell = sheet.cell(row=r_idx, column=c_idx)
+                        h_align = "center" if c_idx == val_col_idx else ("left" if c_idx == len(headers) else None)
+                        cell.alignment = Alignment(horizontal=h_align, vertical="center", wrap_text=True)
 
     wb.save(path)

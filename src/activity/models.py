@@ -42,6 +42,40 @@ REPO_HEADERS = (
 )
 ORG_HEADERS = ("Organization", "Repositories Scanned", "Contributors", *STATUSES, "Total Activities")
 
+REPO_INVENTORY_HEADERS = (
+    "Organization",
+    "Repository",
+    "Visibility",
+    "Created (IST)",
+    "New in Period",
+    "Archived",
+    "Default Branch",
+    "Protected Branches",
+    "CODEOWNERS Present",
+    "CODEOWNERS Path",
+    "Activity Last 7 Days",
+    "Total Activities",
+    "Active Contributors",
+    *METRIC_LABELS,
+    "PR Cohort Merge Rate (%)",
+    "Avg First Review Hours",
+    "First Review Sample PRs",
+    "Coverage",
+)
+
+TOP_REPOS_HEADERS = (
+    "Organization",
+    "Rank",
+    "Repository",
+    "Total Activities",
+    "Active Contributors",
+    *METRIC_LABELS,
+    "Activity Last 7 Days",
+    "Coverage",
+)
+
+MGMT_KPI_HEADERS = ("Scope", "Category", "Metric", "Value", "What this means")
+
 
 def parse_ts(ts_str: str) -> datetime:
     """Parse ISO8601 UTC timestamp to timezone-aware datetime."""
