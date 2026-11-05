@@ -18,6 +18,45 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _request_with_retry(
+    method: str,
+    url: str,
+    max_retries: int = 3,
+    backoff_factor: float = 1.0,
+    **kwargs: Any,
+) -> requests.Response:
+    """Execute an HTTP request with automatic retries on transient network/connection drops."""
+    last_err: Optional[Exception] = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            if method.lower() == "get":
+                return requests.get(url, **kwargs)
+            elif method.lower() == "post":
+                return requests.post(url, **kwargs)
+            elif method.lower() == "head":
+                return requests.head(url, **kwargs)
+            else:
+                return requests.request(method, url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as err:
+            last_err = err
+            if attempt < max_retries:
+                logger.warning(
+                    "Network connection aborted during %s %s (attempt %d/%d): %s. Retrying in %.1fs...",
+                    method.upper(),
+                    url,
+                    attempt,
+                    max_retries,
+                    err,
+                    backoff_factor * attempt,
+                )
+                time.sleep(backoff_factor * attempt)
+            else:
+                break
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError(f"Unexpected failure executing {method} {url}")
+
+
 class GitHubAppAuth:
     """Manages secure token generation and caching for GitHub Apps."""
 
@@ -83,7 +122,8 @@ class GitHubAppAuth:
 
         while True:
             try:
-                response = requests.get(
+                response = _request_with_retry(
+                    "GET",
                     endpoint,
                     headers=headers,
                     params={"per_page": per_page, "page": page},
@@ -275,7 +315,7 @@ class GitHubAppAuth:
         }
 
         try:
-            response = requests.post(endpoint, headers=headers, timeout=15)
+            response = _request_with_retry("POST", endpoint, headers=headers, timeout=15)
             response.raise_for_status()
             data: Dict[str, Any] = response.json()
             new_token: str = data["token"]

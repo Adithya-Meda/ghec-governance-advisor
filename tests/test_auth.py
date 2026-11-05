@@ -218,3 +218,33 @@ def test_get_installation_permissions(mock_get: MagicMock, test_rsa_key_pem: str
     assert perms.get("issues") == "read"
     assert auth.get_installation_permissions("UnknownOrg") == {}
 
+
+@patch("src.auth.github_app_auth.time.sleep")
+@patch("requests.get")
+def test_discover_installations_recovers_on_transient_connection_error(
+    mock_get: MagicMock,
+    mock_sleep: MagicMock,
+    test_rsa_key_pem: str,
+) -> None:
+    """Verify that discover_installations automatically retries on RemoteDisconnected / ConnectionError."""
+    import requests.exceptions
+
+    mock_success = MagicMock()
+    mock_success.status_code = 200
+    mock_success.json.return_value = [
+        {"id": 1001, "account": {"login": "DefaultOrg24"}},
+    ]
+    mock_get.side_effect = [
+        requests.exceptions.ConnectionError("('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"),
+        mock_success,
+    ]
+
+    auth = GitHubAppAuth(app_id=123, private_key=test_rsa_key_pem)
+    installations = auth.discover_installations(force_refresh=True)
+
+    assert len(installations) == 1
+    assert installations[0]["account"]["login"] == "DefaultOrg24"
+    assert mock_get.call_count == 2
+    assert mock_sleep.call_count == 1
+
+

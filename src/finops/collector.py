@@ -107,8 +107,50 @@ def collect_org_packages(
     client: ResilientGitHubClient,
     org: str,
 ) -> List[PackageRecord]:
-    """Retrieve packages published under an organization."""
+    """Retrieve packages published under an organization with GraphQL size and metadata enrichment."""
     packages: List[PackageRecord] = []
+    seen_names: Set[str] = set()
+
+    # 1. Fetch exact file sizes and repository mappings via GraphQL
+    gql_query = """
+    query($org: String!) {
+      organization(login: $org) {
+        packages(first: 100) {
+          nodes {
+            id
+            name
+            packageType
+            repository {
+              name
+            }
+            latestVersion {
+              version
+              files(first: 50) {
+                nodes {
+                  size
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    gql_info: Dict[str, Tuple[int, Optional[str]]] = {}
+    try:
+        data = client.graphql(org, gql_query, {"org": org})
+        nodes = (data.get("data") or {}).get("organization", {}).get("packages", {}).get("nodes") or []
+        for n in nodes:
+            pkg_name = n.get("name", "")
+            files = (n.get("latestVersion") or {}).get("files", {}).get("nodes") or []
+            total_bytes = sum(f.get("size", 0) for f in files if isinstance(f, dict))
+            repo = (n.get("repository") or {}).get("name")
+            if pkg_name:
+                gql_info[pkg_name.lower()] = (total_bytes, repo)
+    except Exception as err:
+        logger.debug("GraphQL package query failed for %s: %s", org, err)
+
+    # 2. Query REST packages across package types
     for pkg_type in PACKAGE_TYPES:
         try:
             endpoint = f"/orgs/{org}/packages"
@@ -117,24 +159,43 @@ def collect_org_packages(
                 name = item.get("name", "unnamed-package")
                 type_name = item.get("package_type", pkg_type)
                 version_count = item.get("version_count", 1)
+                created_str = item.get("created_at")
+                created_at = parse_ts(created_str) if created_str else None
                 updated_str = item.get("updated_at")
                 updated_at = parse_ts(updated_str) if updated_str else None
                 repo_dict = item.get("repository") or {}
                 repo_name = repo_dict.get("name") if isinstance(repo_dict, dict) else None
 
+                # Enrich size and repository from GraphQL
+                size_bytes = 0
+                if name.lower() in gql_info:
+                    gql_bytes, gql_repo = gql_info[name.lower()]
+                    size_bytes = gql_bytes
+                    if not repo_name and gql_repo:
+                        repo_name = gql_repo
+
+                # Fallback repository parsing from html_url
+                if not repo_name and item.get("html_url"):
+                    parts = item["html_url"].split("/")
+                    if len(parts) >= 6 and parts[5] == "packages":
+                        repo_name = parts[4]
+
                 if pkg_id is not None:
+                    seen_names.add(name.lower())
                     packages.append(
                         PackageRecord(
                             id=pkg_id,
                             name=name,
                             package_type=type_name,
                             version_count=version_count,
+                            size_in_bytes=size_bytes,
+                            created_at=created_at,
                             updated_at=updated_at,
                             repo_name=repo_name,
                         )
                     )
         except requests.HTTPError as err:
-            if err.response.status_code not in (404, 403):
+            if err.response.status_code not in (404, 403, 400):
                 logger.debug("Package query failed for %s (type %s): %s", org, pkg_type, err)
         except Exception:
             pass
@@ -278,15 +339,17 @@ def build_finops_rows(
     # Package rows
     for org, pkgs in org_packages.items():
         for pkg in pkgs:
+            created_ist = fmt_timestamp(pkg.created_at)
             updated_ist = fmt_timestamp(pkg.updated_at)
             repo_target = pkg.repo_name or "[Org-Wide]"
+            size_mb = pkg.size_mb if pkg.size_mb > 0 else (0.01 if pkg.size_in_bytes > 0 else 0.0)
             cache_package_rows.append([
                 org,
                 repo_target,
                 f"Package ({pkg.package_type})",
                 pkg.name,
-                "-",
-                "-",
+                size_mb,
+                created_ist,
                 updated_ist,
                 f"{pkg.version_count} versions",
             ])

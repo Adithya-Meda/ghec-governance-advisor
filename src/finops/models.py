@@ -133,12 +133,18 @@ class CacheRecord:
 class PackageRecord:
     """Metadata representing a published GitHub package or container image."""
 
-    id: int
+    id: int | str
     name: str
     package_type: str
     version_count: int = 1
+    size_in_bytes: int = 0
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     repo_name: Optional[str] = None
+
+    @property
+    def size_mb(self) -> float:
+        return format_bytes_to_mb(self.size_in_bytes)
 
 
 @dataclass
