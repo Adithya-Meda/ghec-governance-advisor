@@ -144,6 +144,12 @@ def test_write_activity_workbook_and_csv(tmp_path):
     assert csv_path.is_file()
     assert "alice" in csv_path.read_text(encoding="utf-8")
 
+    from openpyxl import load_workbook
+    wb = load_workbook(xlsx_path)
+    summary = wb["Executive Summary"]
+    assert summary["B5"].value == "1.5s"
+    assert summary["B5"].alignment.horizontal == "center"
+
 
 def test_format_error_permission_mapping():
     from src.activity.collector import _format_error

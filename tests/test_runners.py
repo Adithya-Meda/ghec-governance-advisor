@@ -148,3 +148,18 @@ def test_write_runners_workbook_and_csv(tmp_path):
     assert xlsx_path.stat().st_size > 1000
     assert csv_path.is_file()
     assert "k8s-pod-runner" in csv_path.read_text(encoding="utf-8")
+
+    from openpyxl import load_workbook
+    wb = load_workbook(xlsx_path)
+    summary = wb["Executive Summary"]
+    # Verify Total Duration cell B5 is centered
+    assert summary["B5"].value == "2.0s"
+    assert summary["B5"].alignment.horizontal == "center"
+    # Find Online Runners row and verify value has no percentage and is centered
+    online_row_val = None
+    for r in range(5, 16):
+        if summary.cell(row=r, column=1).value == "Online Runners":
+            online_row_val = summary.cell(row=r, column=2).value
+            assert summary.cell(row=r, column=2).alignment.horizontal == "center"
+            break
+    assert online_row_val == 1  # integer count, no percentage string like "1 (100.0%)"

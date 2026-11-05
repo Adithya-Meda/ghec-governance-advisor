@@ -66,7 +66,7 @@ def write_runners_workbook(
         ["Total Duration", duration_str],
         ["Organizations Monitored", len(org_runner_rows)],
         ["Discovered Self-Hosted Runners", total_runners],
-        ["Online Runners", f"{online_count} ({(online_count / total_runners * 100):.1f}%)" if total_runners else "0"],
+        ["Online Runners", online_count],
         ["Offline / Dormant Runners", offline_count],
         ["Currently Busy Runners", busy_count],
         ["Ephemeral (Autoscaled) Runners", ephemeral_count],

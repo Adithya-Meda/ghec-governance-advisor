@@ -51,6 +51,39 @@ EMPTY_CELL_MESSAGES = {
     "Days Since Last Activity": "No activity",
 }
 
+CENTER_HEADERS = {
+    "Value",
+    "Fleet Aggregate",
+    "Activity Status",
+    "Org Member",
+    "Active Days",
+    "Repositories Contributed",
+    "Rank",
+    "Coverage",
+    "Protected Branches",
+    "CODEOWNERS Present",
+    "New in Period",
+    "Archived",
+    "Activity Last 7 Days",
+    "Visibility",
+    "Created (IST)",
+    "First Activity (IST)",
+    "Last Activity (IST)",
+    "First Seen (IST)",
+    "Days Since Last Activity",
+    "Average Commits per Active Month",
+    "PR Cohort Merge Rate (%)",
+    "Avg First Review Hours",
+    "First Review Sample PRs",
+    "Status",
+    "Busy",
+    "Ephemeral",
+    "JIT",
+    "OS",
+    "Architecture",
+    "Runner Version",
+}
+
 
 def safe_cell(value: Any, header: Optional[str] = None) -> Any:
     """Sanitize spreadsheet cell values against formula injection and fill defaults."""
@@ -83,10 +116,14 @@ def write_table(
             cell.border = BORDER
             if banded:
                 cell.fill = BAND_FILL
+            val_str = str(value).strip() if value is not None else ""
             if (
                 isinstance(value, (int, float))
-                or header in ("Activity Status", "Org Member", "Active Days", "Repositories Contributed")
-                or str(value).strip() in ("Yes", "No", "Unknown", "None")
+                or header in CENTER_HEADERS
+                or val_str in ("Yes", "No", "Unknown", "None", "Complete", "Partial", "N/A", "Online", "Offline", "Idle", "Busy")
+                or (val_str.endswith("s") and len(val_str) <= 12)
+                or (val_str.endswith("%") and len(val_str) <= 12)
+                or value in EMPTY_CELL_MESSAGES.values()
             ):
                 cell.alignment = CENTER
 
