@@ -11,7 +11,15 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..activity.models import DATE_FMT, IST
-from ..activity.reporter import NAVY, autofit, finalize_sheet, safe_cell, section_title, write_table
+from ..activity.reporter import (
+    NAVY,
+    autofit,
+    finalize_sheet,
+    safe_cell,
+    section_title,
+    write_empty_table,
+    write_table,
+)
 from .models import (
     FINOPS_ARTIFACT_HEADERS,
     FINOPS_CACHE_PACKAGE_HEADERS,
@@ -117,9 +125,7 @@ def write_finops_workbook(
                 cell.fill = PatternFill("solid", fgColor=fill)
                 cell.font = Font(bold=True, color=font_col)
     else:
-        empty_row = [["No repositories found on target organizations"] + ["-"] * (len(FINOPS_REPO_HEADERS) - 1)]
-        last_repo = write_table(repo_ws, 1, FINOPS_REPO_HEADERS, empty_row)
-        finalize_sheet(repo_ws, 1, last_repo, len(FINOPS_REPO_HEADERS), "C2")
+        write_empty_table(repo_ws, 1, FINOPS_REPO_HEADERS, "No repositories found on target organizations.")
 
     # Sheet 3: Artifact Inventory
     art_ws = wb.create_sheet("Artifact Inventory")
@@ -127,9 +133,12 @@ def write_finops_workbook(
         last_art = write_table(art_ws, 1, FINOPS_ARTIFACT_HEADERS, artifact_rows)
         finalize_sheet(art_ws, 1, last_art, len(FINOPS_ARTIFACT_HEADERS), "D2")
     else:
-        empty_row = [["No workflow artifacts found"] + ["-"] * (len(FINOPS_ARTIFACT_HEADERS) - 1)]
-        last_art = write_table(art_ws, 1, FINOPS_ARTIFACT_HEADERS, empty_row)
-        finalize_sheet(art_ws, 1, last_art, len(FINOPS_ARTIFACT_HEADERS), "D2")
+        write_empty_table(
+            art_ws,
+            1,
+            FINOPS_ARTIFACT_HEADERS,
+            "No workflow artifacts found on target repositories.",
+        )
 
     # Sheet 4: Cache & Package Inventory
     cache_ws = wb.create_sheet("Cache & Package Inventory")
@@ -137,8 +146,11 @@ def write_finops_workbook(
         last_cp = write_table(cache_ws, 1, FINOPS_CACHE_PACKAGE_HEADERS, cache_package_rows)
         finalize_sheet(cache_ws, 1, last_cp, len(FINOPS_CACHE_PACKAGE_HEADERS), "D2")
     else:
-        empty_row = [["No Actions caches or packages found"] + ["-"] * (len(FINOPS_CACHE_PACKAGE_HEADERS) - 1)]
-        last_cp = write_table(cache_ws, 1, FINOPS_CACHE_PACKAGE_HEADERS, empty_row)
-        finalize_sheet(cache_ws, 1, last_cp, len(FINOPS_CACHE_PACKAGE_HEADERS), "D2")
+        write_empty_table(
+            cache_ws,
+            1,
+            FINOPS_CACHE_PACKAGE_HEADERS,
+            "No Actions caches or packages found on target organizations.",
+        )
 
     wb.save(path)

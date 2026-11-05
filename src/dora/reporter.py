@@ -12,7 +12,15 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..activity.models import DATE_FMT, IST
-from ..activity.reporter import NAVY, autofit, finalize_sheet, safe_cell, section_title, write_table
+from ..activity.reporter import (
+    NAVY,
+    autofit,
+    finalize_sheet,
+    safe_cell,
+    section_title,
+    write_empty_table,
+    write_table,
+)
 from .models import (
     DORA_DEPLOYMENT_HEADERS,
     DORA_ORG_HEADERS,
@@ -118,9 +126,7 @@ def write_dora_workbook(
                 cell.fill = PatternFill("solid", fgColor=fill)
                 cell.font = Font(bold=True, color=font_col)
     else:
-        empty_row = [["No repositories found on target organizations"] + ["-"] * (len(DORA_REPO_HEADERS) - 1)]
-        last_repo = write_table(repo_ws, 1, DORA_REPO_HEADERS, empty_row)
-        finalize_sheet(repo_ws, 1, last_repo, len(DORA_REPO_HEADERS), "C2")
+        write_empty_table(repo_ws, 1, DORA_REPO_HEADERS, "No repositories found on target organizations.")
 
     # Sheet 3: Deployment Ledger
     dep_ws = wb.create_sheet("Deployment & Release Ledger")
@@ -137,9 +143,12 @@ def write_dora_workbook(
                 cell.fill = PatternFill("solid", fgColor=fill)
                 cell.font = Font(bold=True, color=font_col)
     else:
-        empty_row = [["No deployment or release events recorded within window"] + ["-"] * (len(DORA_DEPLOYMENT_HEADERS) - 1)]
-        last_dep = write_table(dep_ws, 1, DORA_DEPLOYMENT_HEADERS, empty_row)
-        finalize_sheet(dep_ws, 1, last_dep, len(DORA_DEPLOYMENT_HEADERS), "D2")
+        write_empty_table(
+            dep_ws,
+            1,
+            DORA_DEPLOYMENT_HEADERS,
+            "No deployment or release events recorded within the lookback window.",
+        )
 
     # Sheet 4: Recovery Ledger
     rec_ws = wb.create_sheet("Recovery & MTTR Ledger")
@@ -147,8 +156,11 @@ def write_dora_workbook(
         last_rec = write_table(rec_ws, 1, DORA_RECOVERY_HEADERS, recovery_rows)
         finalize_sheet(rec_ws, 1, last_rec, len(DORA_RECOVERY_HEADERS), "C2")
     else:
-        empty_row = [["No failure recovery incidents recorded within window"] + ["-"] * (len(DORA_RECOVERY_HEADERS) - 1)]
-        last_rec = write_table(rec_ws, 1, DORA_RECOVERY_HEADERS, empty_row)
-        finalize_sheet(rec_ws, 1, last_rec, len(DORA_RECOVERY_HEADERS), "C2")
+        write_empty_table(
+            rec_ws,
+            1,
+            DORA_RECOVERY_HEADERS,
+            "No failure recovery incidents recorded within the lookback window.",
+        )
 
     wb.save(path)

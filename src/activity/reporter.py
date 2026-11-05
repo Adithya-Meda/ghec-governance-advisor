@@ -108,9 +108,39 @@ def safe_cell(value: Any, header: Optional[str] = None) -> Any:
     """Sanitize spreadsheet cell values against formula injection and fill defaults."""
     if (value is None or value == "") and header in EMPTY_CELL_MESSAGES:
         value = EMPTY_CELL_MESSAGES[header]
-    if isinstance(value, str) and value.startswith(FORMULA_PREFIXES):
-        return f"'{value}"
+    if isinstance(value, str):
+        val_strip = value.strip()
+        if val_strip in ("-", "--", "---", "N/A", "None", ""):
+            return value
+        if value.startswith(("=", "@", "\t", "\r")):
+            return f"'{value}"
+        if value.startswith(("+", "-")) and len(val_strip) > 1 and not val_strip.lstrip("+-").replace(".", "", 1).isdigit():
+            return f"'{value}"
     return value
+
+
+def write_empty_table(ws, top: int, headers: Tuple[str, ...], message: str) -> None:
+    """Write table headers and a clean, elegant empty-state notice without trailing dashes."""
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=top, column=col_idx, value=header)
+        cell.fill, cell.font, cell.border = HEADER_FILL, HEADER_FONT, BORDER
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    notice_row = top + 1
+    cell = ws.cell(row=notice_row, column=1, value=message)
+    cell.font = Font(italic=True, color="595959")
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+    cell.border = BORDER
+
+    for col_idx in range(2, len(headers) + 1):
+        c = ws.cell(row=notice_row, column=col_idx, value="")
+        c.border = BORDER
+
+    ws.auto_filter.ref = f"A{top}:{get_column_letter(len(headers))}{top}"
+    ws.row_dimensions[top].height = 28
+    ws.row_dimensions[notice_row].height = 22
+    ws.page_setup.orientation = "landscape"
+    autofit(ws)
 
 
 def write_table(

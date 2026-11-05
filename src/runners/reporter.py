@@ -11,7 +11,15 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..activity.models import DATE_FMT, IST
-from ..activity.reporter import NAVY, autofit, finalize_sheet, safe_cell, section_title, write_table
+from ..activity.reporter import (
+    NAVY,
+    autofit,
+    finalize_sheet,
+    safe_cell,
+    section_title,
+    write_empty_table,
+    write_table,
+)
 from .models import ORG_RUNNER_HEADERS, RUNNER_HEADERS, RunnerInfo, RunnersConfig
 
 
@@ -99,8 +107,11 @@ def write_runners_workbook(
                 cell.fill = PatternFill("solid", fgColor="FFC7CE")
                 cell.font = Font(bold=True, color="9C0006")
     else:
-        empty_row = [["No self-hosted runners found on target organizations"] + ["-"] * (len(RUNNER_HEADERS) - 1)]
-        last_runner = write_table(runner_ws, 1, RUNNER_HEADERS, empty_row)
-        finalize_sheet(runner_ws, 1, last_runner, len(RUNNER_HEADERS), "D2")
+        write_empty_table(
+            runner_ws,
+            1,
+            RUNNER_HEADERS,
+            "No self-hosted runners found on target organizations.",
+        )
 
     wb.save(path)

@@ -11,7 +11,15 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..activity.models import DATE_FMT, IST
-from ..activity.reporter import NAVY, autofit, finalize_sheet, safe_cell, section_title, write_table
+from ..activity.reporter import (
+    NAVY,
+    autofit,
+    finalize_sheet,
+    safe_cell,
+    section_title,
+    write_empty_table,
+    write_table,
+)
 from .models import (
     BYPASS_ACTOR_HEADERS,
     BYPASS_ORG_HEADERS,
@@ -98,9 +106,12 @@ def write_bypass_workbook(
         last_push = write_table(push_ws, 1, BYPASS_PUSH_PROTECTION_HEADERS, push_rows)
         finalize_sheet(push_ws, 1, last_push, len(BYPASS_PUSH_PROTECTION_HEADERS), "D2")
     else:
-        empty_row = [["No secret scanning push protection bypasses detected within window"] + ["-"] * (len(BYPASS_PUSH_PROTECTION_HEADERS) - 1)]
-        last_push = write_table(push_ws, 1, BYPASS_PUSH_PROTECTION_HEADERS, empty_row)
-        finalize_sheet(push_ws, 1, last_push, len(BYPASS_PUSH_PROTECTION_HEADERS), "D2")
+        write_empty_table(
+            push_ws,
+            1,
+            BYPASS_PUSH_PROTECTION_HEADERS,
+            "No secret scanning push protection bypasses detected within the lookback window.",
+        )
 
     # Sheet 3: Ruleset Bypasses
     rule_ws = wb.create_sheet("Ruleset Bypasses")
@@ -108,9 +119,12 @@ def write_bypass_workbook(
         last_rule = write_table(rule_ws, 1, BYPASS_RULESET_HEADERS, ruleset_rows)
         finalize_sheet(rule_ws, 1, last_rule, len(BYPASS_RULESET_HEADERS), "C2")
     else:
-        empty_row = [["No branch ruleset bypasses detected within window"] + ["-"] * (len(BYPASS_RULESET_HEADERS) - 1)]
-        last_rule = write_table(rule_ws, 1, BYPASS_RULESET_HEADERS, empty_row)
-        finalize_sheet(rule_ws, 1, last_rule, len(BYPASS_RULESET_HEADERS), "C2")
+        write_empty_table(
+            rule_ws,
+            1,
+            BYPASS_RULESET_HEADERS,
+            "No branch ruleset bypasses detected within the lookback window.",
+        )
 
     # Sheet 4: Actor Accountability Ledger
     actor_ws = wb.create_sheet("Actor Accountability Ledger")
@@ -118,8 +132,11 @@ def write_bypass_workbook(
         last_act = write_table(actor_ws, 1, BYPASS_ACTOR_HEADERS, actor_rows)
         finalize_sheet(actor_ws, 1, last_act, len(BYPASS_ACTOR_HEADERS), "C2")
     else:
-        empty_row = [["No bypassing actors identified within window"] + ["-"] * (len(BYPASS_ACTOR_HEADERS) - 1)]
-        last_act = write_table(actor_ws, 1, BYPASS_ACTOR_HEADERS, empty_row)
-        finalize_sheet(actor_ws, 1, last_act, len(BYPASS_ACTOR_HEADERS), "C2")
+        write_empty_table(
+            actor_ws,
+            1,
+            BYPASS_ACTOR_HEADERS,
+            "No bypassing actors identified within the lookback window.",
+        )
 
     wb.save(path)
