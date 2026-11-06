@@ -461,4 +461,39 @@ def test_init_ai_engine_overrides() -> None:
         assert "--require-ai" in str(exc)
 
 
+@patch("google.genai.Client")
+def test_ai_circuit_breaker_on_rate_limit(mock_client_cls: MagicMock) -> None:
+    """Verify that hitting a rate limit immediately trips the circuit breaker to avoid stalling."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: quota exceeded")
+
+    engine = AIEngine(api_key="valid-mock-key", enabled=True)
+    assert not engine.is_circuit_active()
+
+    result = CheckResult(
+        check_id="copilot_instructions",
+        check_name="GitHub Copilot Instructions",
+        category="Developer Experience",
+        persona=Persona.CONTRIBUTOR,
+        severity=CheckSeverity.LOW,
+        status=CheckStatus.WARN,
+        org_name="my-org",
+        repo_name="fastapi-backend",
+        current_state="Missing",
+        recommended_state="Add instructions",
+        explanation="Create .github/copilot-instructions.md",
+    )
+
+    # First call encounters 429
+    engine.enrich_remediation(result, {"languages": ["Python"]})
+    assert engine.is_circuit_active() is True
+
+    # Subsequent call within cooldown should short-circuit with 0 API calls
+    mock_client.models.generate_content.reset_mock()
+    engine.enrich_remediation(result, {"languages": ["Python"]})
+    assert mock_client.models.generate_content.call_count == 0
+
+
+
 

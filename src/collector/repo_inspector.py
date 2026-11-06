@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 import requests
 
 from .client import Repo360Client
@@ -22,6 +22,43 @@ class RepoInspector:
             client: Authenticated Repo360Client instance.
         """
         self.client = client
+        self._repo_tree_cache: Dict[Tuple[str, str, str], Optional[Set[str]]] = {}
+        self._file_content_cache: Dict[Tuple[str, str, str, str], Optional[str]] = {}
+        self._repo_workflows_cache: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        self._repo_metadata_cache: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
+        self._repo_rulesets_cache: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        self._repo_protection_cache: Dict[Tuple[str, str, str], Optional[Dict[str, Any]]] = {}
+
+    def prefetch_repo_tree(
+        self, org: str, repo: str, ref: str = "main"
+    ) -> Optional[Set[str]]:
+        """Fetch and cache all file paths in repository via Git Trees API in 1 single call.
+
+        Reduces API round-trips from ~20 calls per repo down to 2-3 calls by allowing
+        file existence and workflow discovery to be evaluated in-memory.
+        """
+        key = (org, repo, ref)
+        if key in self._repo_tree_cache:
+            return self._repo_tree_cache[key]
+
+        data = self.client.get(
+            f"/repos/{org}/{repo}/git/trees/{ref}",
+            params={"recursive": "1"},
+            allow_404=True,
+        )
+        if not data or not isinstance(data, dict):
+            # Repository is empty or default branch ref doesn't exist
+            empty_set: Set[str] = set()
+            self._repo_tree_cache[key] = empty_set
+            return empty_set
+
+        tree_items = data.get("tree", [])
+        tree_set = {
+            item["path"] for item in tree_items
+            if isinstance(item, dict) and "path" in item
+        }
+        self._repo_tree_cache[key] = tree_set
+        return tree_set
 
     # --- Organization-Level Collectors ---
 
@@ -89,17 +126,28 @@ class RepoInspector:
     # --- Repository-Level Collectors ---
 
     def get_repo_metadata(self, org: str, repo: str) -> Optional[Dict[str, Any]]:
-        """Fetch repository details."""
-        return self.client.get(f"/repos/{org}/{repo}", allow_404=True)
+        """Fetch repository details with caching."""
+        cache_key = (org, repo)
+        if cache_key in self._repo_metadata_cache:
+            return self._repo_metadata_cache[cache_key]
+        meta = self.client.get(f"/repos/{org}/{repo}", allow_404=True)
+        self._repo_metadata_cache[cache_key] = meta
+        return meta
 
     def get_repo_rulesets(self, org: str, repo: str) -> List[Dict[str, Any]]:
         """Fetch repository-level rulesets (falls back gracefully if 403 forbidden or unconfigured)."""
+        cache_key = (org, repo)
+        if cache_key in self._repo_rulesets_cache:
+            return self._repo_rulesets_cache[cache_key]
         try:
             data = self.client.get(f"/repos/{org}/{repo}/rulesets", allow_404=True)
-            return data if isinstance(data, list) else []
+            res = data if isinstance(data, list) else []
+            self._repo_rulesets_cache[cache_key] = res
+            return res
         except requests.exceptions.HTTPError as err:
             if getattr(err, "response", None) is not None and err.response.status_code == 403:
                 logger.debug("Rulesets API returned 403 on %s/%s (falling back to classic protection).", org, repo)
+                self._repo_rulesets_cache[cache_key] = []
                 return []
             raise
 
@@ -107,13 +155,19 @@ class RepoInspector:
         self, org: str, repo: str, branch: str = "main"
     ) -> Optional[Dict[str, Any]]:
         """Fetch branch protection rules for a specific branch (falls back gracefully if 403/404)."""
+        cache_key = (org, repo, branch)
+        if cache_key in self._repo_protection_cache:
+            return self._repo_protection_cache[cache_key]
         try:
-            return self.client.get(
+            res = self.client.get(
                 f"/repos/{org}/{repo}/branches/{branch}/protection", allow_404=True
             )
+            self._repo_protection_cache[cache_key] = res
+            return res
         except requests.exceptions.HTTPError as err:
             if getattr(err, "response", None) is not None and err.response.status_code == 403:
                 logger.debug("Branch protection API returned 403 on %s/%s:%s.", org, repo, branch)
+                self._repo_protection_cache[cache_key] = None
                 return None
             raise
 
@@ -121,6 +175,8 @@ class RepoInspector:
         self, org: str, repo: str, path: str, ref: str = "main"
     ) -> Optional[str]:
         """Fetch and decode utf-8 text file content from repository.
+
+        Leverages the repository tree cache to avoid 404 HTTP round-trips for missing files.
 
         Args:
             org: Organization name.
@@ -131,31 +187,69 @@ class RepoInspector:
         Returns:
             Decoded file text content, or None if file does not exist.
         """
+        path_clean = path.lstrip("/")
+        content_key = (org, repo, path_clean, ref)
+        if content_key in self._file_content_cache:
+            return self._file_content_cache[content_key]
+
+        tree_key = (org, repo, ref)
+        if tree_key in self._repo_tree_cache:
+            tree_set = self._repo_tree_cache[tree_key]
+            if tree_set is not None and path_clean not in tree_set:
+                self._file_content_cache[content_key] = None
+                return None
+
         data = self.client.get(
-            f"/repos/{org}/{repo}/contents/{path.lstrip('/')}",
+            f"/repos/{org}/{repo}/contents/{path_clean}",
             params={"ref": ref},
             allow_404=True,
         )
         if not data or not isinstance(data, dict):
+            self._file_content_cache[content_key] = None
             return None
 
         content = data.get("content")
         encoding = data.get("encoding")
+        decoded_str: Optional[str] = None
         if content and encoding == "base64":
             try:
                 decoded_bytes = base64.b64decode(content)
-                return decoded_bytes.decode("utf-8", errors="replace")
+                decoded_str = decoded_bytes.decode("utf-8", errors="replace")
             except Exception as err:
                 logger.warning("Failed to decode %s in %s/%s: %s", path, org, repo, err)
-                return None
-        return None
+                decoded_str = None
 
-    def list_workflows(self, org: str, repo: str) -> List[Dict[str, Any]]:
-        """List GitHub Actions workflow files and details."""
+        self._file_content_cache[content_key] = decoded_str
+        return decoded_str
+
+    def list_workflows(self, org: str, repo: str, ref: str = "main") -> List[Dict[str, Any]]:
+        """List GitHub Actions workflow files and details.
+
+        Discovers workflows directly from tree cache if present to eliminate redundant API calls.
+        """
+        cache_key = (org, repo)
+        if cache_key in self._repo_workflows_cache:
+            return self._repo_workflows_cache[cache_key]
+
+        tree_key = (org, repo, ref)
+        if tree_key in self._repo_tree_cache:
+            tree_set = self._repo_tree_cache[tree_key]
+            if tree_set is not None:
+                wf_paths = [
+                    p for p in tree_set
+                    if p.startswith(".github/workflows/") and (p.endswith(".yml") or p.endswith(".yaml"))
+                ]
+                workflows = [
+                    {"name": p.split("/")[-1], "path": p, "state": "active"}
+                    for p in sorted(wf_paths)
+                ]
+                self._repo_workflows_cache[cache_key] = workflows
+                return workflows
+
         data = self.client.get(f"/repos/{org}/{repo}/actions/workflows", allow_404=True)
-        if isinstance(data, dict) and "workflows" in data:
-            return data["workflows"]
-        return []
+        workflows = data.get("workflows", []) if isinstance(data, dict) and "workflows" in data else []
+        self._repo_workflows_cache[cache_key] = workflows
+        return workflows
 
     def get_environments(self, org: str, repo: str) -> List[Dict[str, Any]]:
         """Fetch deployment environments configured for the repository."""
@@ -167,9 +261,22 @@ class RepoInspector:
     def check_file_exists(
         self, org: str, repo: str, path: str, ref: str = "main"
     ) -> bool:
-        """Check if a file or directory exists in the repo."""
+        """Check if a file or directory exists in the repo.
+
+        Evaluates against local in-memory tree cache when available for 0ms execution.
+        """
+        path_clean = path.lstrip("/")
+        tree_key = (org, repo, ref)
+        if tree_key in self._repo_tree_cache:
+            tree_set = self._repo_tree_cache[tree_key]
+            if tree_set is not None:
+                if path_clean in tree_set:
+                    return True
+                prefix = path_clean + "/"
+                return any(p.startswith(prefix) for p in tree_set)
+
         data = self.client.get(
-            f"/repos/{org}/{repo}/contents/{path.lstrip('/')}",
+            f"/repos/{org}/{repo}/contents/{path_clean}",
             params={"ref": ref},
             allow_404=True,
         )
@@ -205,20 +312,24 @@ class RepoInspector:
         if primary_lang:
             languages.append(primary_lang)
 
-        # Single API call to list root directory contents instead of 13 separate calls
-        contents = self.client.get(
-            f"/repos/{org}/{repo}/contents",
-            params={"ref": ref},
-            allow_404=True,
-        )
-        root_files: set[str] = set()
-        if isinstance(contents, list):
-            for item in contents:
-                if isinstance(item, dict) and "name" in item:
-                    root_files.add(item["name"])
+        # Single API call or tree cache to list root directory contents
+        tree_key = (org, repo, ref)
+        root_files: Set[str] = set()
+        if tree_key in self._repo_tree_cache and self._repo_tree_cache[tree_key] is not None:
+            tree_set = self._repo_tree_cache[tree_key]
+            root_files = {p for p in tree_set if "/" not in p}
+        else:
+            contents = self.client.get(
+                f"/repos/{org}/{repo}/contents",
+                params={"ref": ref},
+                allow_404=True,
+            )
+            if isinstance(contents, list):
+                for item in contents:
+                    if isinstance(item, dict) and "name" in item:
+                        root_files.add(item["name"])
 
         for filename, lang in manifest_checks:
-            # Check root listing first; fallback to check_file_exists if contents was unavailable
             exists = (filename in root_files) if root_files else self.check_file_exists(org, repo, filename, ref=ref)
             if exists:
                 manifests.append(filename)

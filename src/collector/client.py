@@ -11,6 +11,7 @@ Production-grade rate-limit resilience for 1000+ repositories:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Dict, Iterator, List, Optional
 import requests
@@ -53,6 +54,7 @@ class Repo360Client:
         self.rate_limit_remaining: Optional[int] = None
         self.rate_limit_reset: Optional[int] = None
         self.rate_limit_limit: Optional[int] = None
+        self._lock = threading.Lock()
 
         # Configure session with standard retry strategy for transient connection resets
         self.session = requests.Session()
@@ -62,7 +64,7 @@ class Repo360Client:
             status_forcelist=[502, 503, 504],
             raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retries)
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=25, pool_maxsize=25)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
@@ -88,47 +90,52 @@ class Repo360Client:
 
     def _handle_rate_limit(self, response: requests.Response) -> None:
         """Inspect and log rate limit headers with active pacing for 1000+ repos."""
-        self.total_api_calls += 1
-        remaining_str = response.headers.get("x-ratelimit-remaining")
-        reset_str = response.headers.get("x-ratelimit-reset")
-        limit_str = response.headers.get("x-ratelimit-limit")
+        with self._lock:
+            self.total_api_calls += 1
+            remaining_str = response.headers.get("x-ratelimit-remaining")
+            reset_str = response.headers.get("x-ratelimit-reset")
+            limit_str = response.headers.get("x-ratelimit-limit")
 
-        if remaining_str is not None:
-            try:
-                self.rate_limit_remaining = int(remaining_str)
-            except ValueError:
-                pass
-        if reset_str is not None:
-            try:
-                self.rate_limit_reset = int(reset_str)
-            except ValueError:
-                pass
-        if limit_str is not None:
-            try:
-                self.rate_limit_limit = int(limit_str)
-            except ValueError:
-                pass
+            if remaining_str is not None:
+                try:
+                    self.rate_limit_remaining = int(remaining_str)
+                except ValueError:
+                    pass
+            if reset_str is not None:
+                try:
+                    self.rate_limit_reset = int(reset_str)
+                except ValueError:
+                    pass
+            if limit_str is not None:
+                try:
+                    self.rate_limit_limit = int(limit_str)
+                except ValueError:
+                    pass
+
+            rem = self.rate_limit_remaining
+            res = self.rate_limit_reset
+            lim = self.rate_limit_limit
 
         # Primary rate limit management
-        if self.rate_limit_remaining is not None:
-            if self.rate_limit_remaining <= 5:
+        if rem is not None:
+            if rem <= 5:
                 now = int(time.time())
-                wait_seconds = max(1, (self.rate_limit_reset - now) + 2) if self.rate_limit_reset else 60
+                wait_seconds = max(1, (res - now) + 2) if res else 60
                 logger.warning(
                     "GitHub API primary rate limit critically low (%s/%s remaining). "
                     "Pausing execution for %d seconds until reset window (%s UTC)...",
-                    self.rate_limit_remaining,
-                    self.rate_limit_limit or "unknown",
+                    rem,
+                    lim or "unknown",
                     wait_seconds,
-                    time.strftime("%H:%M:%S", time.gmtime(self.rate_limit_reset or (now + wait_seconds))),
+                    time.strftime("%H:%M:%S", time.gmtime(res or (now + wait_seconds))),
                 )
                 self._sleep_with_heartbeat(wait_seconds)
-            elif self.rate_limit_remaining < 100 and self.rate_limit_remaining % 25 == 0:
+            elif rem < 100 and rem % 25 == 0:
                 logger.warning(
                     "GitHub API rate limit capacity: %s / %s calls remaining. Resets in %d seconds.",
-                    self.rate_limit_remaining,
-                    self.rate_limit_limit or "unknown",
-                    max(0, (self.rate_limit_reset or int(time.time())) - int(time.time())),
+                    rem,
+                    lim or "unknown",
+                    max(0, (res or int(time.time())) - int(time.time())),
                 )
 
         # Adaptive micro-delay to prevent burst secondary abuse triggers on large 1000+ inventories
@@ -136,7 +143,7 @@ class Repo360Client:
             # If remaining quota drops below 500, gently throttle delay
             delay = (
                 (self.adaptive_delay_ms * 3 / 1000.0)
-                if (self.rate_limit_remaining and self.rate_limit_remaining < 500)
+                if (rem and rem < 500)
                 else (self.adaptive_delay_ms / 1000.0)
             )
             time.sleep(delay)
@@ -200,8 +207,8 @@ class Repo360Client:
                 )
                 self._handle_rate_limit(response)
 
-                # 404 Not Found handling
-                if response.status_code == 404:
+                # 404 / 409 (Empty repo) / 410 handling
+                if response.status_code in (404, 409, 410):
                     if allow_404:
                         return None
                     response.raise_for_status()
@@ -259,9 +266,9 @@ class Repo360Client:
                 return response.json()
 
             except requests.exceptions.HTTPError as http_err:
-                # Deterministic HTTP client errors (400, 401, 403, 404, 422) should not be retried as network errors
-                if response is not None and response.status_code in (400, 401, 403, 404, 422):
-                    if allow_404 and response.status_code in (403, 404):
+                # Deterministic HTTP client errors (400, 401, 403, 404, 409, 410, 422) should not be retried as network errors
+                if response is not None and response.status_code in (400, 401, 403, 404, 409, 410, 422):
+                    if allow_404 and response.status_code in (403, 404, 409, 410):
                         return None
                     raise http_err
                 if attempt == self.max_retries:

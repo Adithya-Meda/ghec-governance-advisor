@@ -106,3 +106,35 @@ def test_main_unknown_command(capsys):
         assert ret == 1
         captured = capsys.readouterr()
         assert "Unknown command" in captured.out
+
+
+def test_run_audit_concurrent_execution():
+    """Verify that run_audit executes across multiple repositories concurrently and prefetches trees."""
+    from src.main import run_audit
+    from src.validator import RepoTarget
+
+    mock_inspector = MagicMock()
+    mock_inspector.detect_tech_stack.return_value = {"languages": ["Python"]}
+    mock_inspector.prefetch_repo_tree.return_value = {"README.md"}
+
+    targets = [
+        RepoTarget(org_name="fintech-core", repo_name="repo-1", target_personas={"all"}),
+        RepoTarget(org_name="fintech-core", repo_name="repo-2", target_personas={"all"}),
+        RepoTarget(org_name="fintech-core", repo_name="repo-3", target_personas={"all"}),
+    ]
+
+    config = {
+        "enabled_checks": {"codeowners_validation": True},
+        "policy_thresholds": {},
+    }
+
+    results = run_audit(
+        inspector=mock_inspector,
+        targets=targets,
+        advisory_config=config,
+        ai_engine=None,
+        max_workers=3,
+    )
+
+    assert mock_inspector.prefetch_repo_tree.call_count == 3
+    assert len(results) >= 3

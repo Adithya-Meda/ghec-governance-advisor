@@ -110,6 +110,8 @@ class AIEngine:
         self._gen_config: Optional[Any] = None
         self._remediation_cache: Dict[str, str] = {}
         self.init_error: Optional[str] = None
+        self._circuit_cooldown_until: float = 0.0
+        self._circuit_notified: bool = False
 
         if self.enabled:
             if self.provider == "gemini":
@@ -141,6 +143,24 @@ class AIEngine:
         if self.provider == "gemini":
             return self._client is not None
         return True
+
+    def is_circuit_active(self) -> bool:
+        """Check if AI circuit breaker is temporarily tripped due to upstream rate limits."""
+        return time.time() < self._circuit_cooldown_until
+
+    def trip_circuit_breaker(self, cooldown_seconds: float = 120.0, reason: str = "Rate limit") -> None:
+        """Temporarily suspend live LLM remediation requests to keep audit pipeline moving fast."""
+        self._circuit_cooldown_until = time.time() + cooldown_seconds
+        if not self._circuit_notified:
+            logger.warning(
+                "[AI Remediation] %s reached on provider '%s'. "
+                "Circuit breaker active for %ds — seamlessly using built-in deterministic "
+                "remediation templates to maintain maximum audit velocity.",
+                reason,
+                self.provider.upper(),
+                int(cooldown_seconds),
+            )
+            self._circuit_notified = True
 
     def verify_connection(self) -> tuple[bool, str]:
         """Perform an active pre-flight connectivity and credential check with model fallback."""
@@ -312,7 +332,7 @@ class AIEngine:
 
     def _call_gemini(self, prompt: str, retry_on_rate_limit: bool = True) -> Optional[str]:
         """Execute Gemini call with resilient rate-limit handling and safe model fallback."""
-        if not self.is_available():
+        if not self.is_available() or self.is_circuit_active():
             return None
 
         candidate_models = [self.model_name] + [
@@ -342,10 +362,8 @@ class AIEngine:
                         self.enabled = False
                         return None
                     elif "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg or "503" in err_msg:
-                        if attempt == 0:
-                            time.sleep(1)
-                            continue
-                        break  # try next fallback model
+                        self.trip_circuit_breaker(120.0, reason="Gemini Rate limit (429/Quota exceeded)")
+                        return None
                     elif "NOT_FOUND" in err_msg or "404" in err_msg:
                         break  # try next fallback model
                     else:
@@ -355,7 +373,7 @@ class AIEngine:
 
     def _call_openai(self, prompt: str, retry_on_rate_limit: bool = True) -> Optional[str]:
         """Execute OpenAI Chat Completion API call with model fallback."""
-        if not self.is_available():
+        if not self.is_available() or self.is_circuit_active():
             return None
 
         import requests
@@ -379,7 +397,7 @@ class AIEngine:
                         "messages": [{"role": "user", "content": self.sanitize_text(prompt)}],
                         "temperature": 0.2,
                     }
-                    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+                    resp = requests.post(url, headers=headers, json=payload, timeout=20)
                     if resp.status_code == 200:
                         data = resp.json()
                         choices = data.get("choices", [])
@@ -394,10 +412,8 @@ class AIEngine:
                         self.enabled = False
                         return None
                     elif resp.status_code == 429:
-                        if attempt == 0:
-                            time.sleep(1)
-                            continue
-                        break
+                        self.trip_circuit_breaker(120.0, reason="OpenAI Rate limit (429)")
+                        return None
                     elif resp.status_code == 404:
                         break
                     else:
@@ -410,7 +426,7 @@ class AIEngine:
 
     def _call_anthropic(self, prompt: str, retry_on_rate_limit: bool = True) -> Optional[str]:
         """Execute Anthropic Messages API call with model fallback."""
-        if not self.is_available():
+        if not self.is_available() or self.is_circuit_active():
             return None
 
         import requests
@@ -435,7 +451,7 @@ class AIEngine:
                         "messages": [{"role": "user", "content": self.sanitize_text(prompt)}],
                         "temperature": 0.2,
                     }
-                    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+                    resp = requests.post(url, headers=headers, json=payload, timeout=20)
                     if resp.status_code == 200:
                         data = resp.json()
                         contents = data.get("content", [])
@@ -448,6 +464,10 @@ class AIEngine:
                     elif resp.status_code in (401, 403):
                         logger.warning("Anthropic API Key Invalid or Unauthenticated. Falling back to deterministic mode.")
                         self.enabled = False
+                        return None
+                    elif resp.status_code == 429:
+                        self.trip_circuit_breaker(120.0, reason="Anthropic Rate limit (429)")
+                        return None
                         return None
                     elif resp.status_code == 429:
                         if attempt == 0:
@@ -567,8 +587,12 @@ Output ONLY the code/configuration snippet inside code fences. Do not add introd
         if cache_key in self._remediation_cache:
             cleaned_text = self._remediation_cache[cache_key]
         else:
-            text = self._generate_text(prompt)
+            if self.is_circuit_active():
+                return
+            text = self._generate_text(prompt, retry_on_rate_limit=False)
             if not text:
+                # Cache empty string so subsequent repositories do not repeat stalled LLM calls
+                self._remediation_cache[cache_key] = ""
                 return
             cleaned_text = text.strip()
             # Remove wrapping markdown fences if present for cleaner diff display
@@ -577,6 +601,9 @@ Output ONLY the code/configuration snippet inside code fences. Do not add introd
                 if len(lines) >= 2 and lines[-1].startswith("```"):
                     cleaned_text = "\n".join(lines[1:-1])
             self._remediation_cache[cache_key] = cleaned_text
+
+        if not cleaned_text:
+            return
 
         result.remediation_snippet_after = cleaned_text
         result.extra_details["ai_enriched"] = True

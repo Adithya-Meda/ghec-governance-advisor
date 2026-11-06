@@ -178,3 +178,49 @@ def test_list_installation_repositories_with_explicit_installation_id(mock_clien
         assert mock_get.called
         assert mock_get.call_args[1]["installation_id"] == 999888
 
+
+def test_client_get_409_empty_repo_allowed(mock_client: Repo360Client) -> None:
+    """Test that HTTP 409 Conflict (empty repo) returns None when allow_404=True without retrying."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 409
+    mock_resp.text = '{"message": "Git Repository is empty."}'
+    mock_resp.headers = {}
+
+    with patch.object(mock_client.session, "get", return_value=mock_resp):
+        res = mock_client.get("/repos/org/empty-repo/contents", allow_404=True)
+        assert res is None
+
+
+def test_repo_inspector_tree_cache_missing_file_zero_http_calls(mock_client: Repo360Client) -> None:
+    """Verify that tree prefetching prevents unnecessary HTTP round-trips for non-existent files."""
+    inspector = RepoInspector(client=mock_client)
+
+    tree_payload = {
+        "tree": [
+            {"path": "README.md", "type": "blob"},
+            {"path": ".github/workflows/build.yml", "type": "blob"},
+            {"path": ".github/copilot-instructions.md", "type": "blob"},
+        ]
+    }
+
+    with patch.object(mock_client, "get", return_value=tree_payload):
+        tree = inspector.prefetch_repo_tree("org", "repo", "main")
+        assert "README.md" in tree
+        assert ".github/copilot-instructions.md" in tree
+
+    # All checks should evaluate against in-memory tree cache with 0 API calls to client.get
+    with patch.object(mock_client, "get") as mock_get:
+        assert inspector.check_file_exists("org", "repo", ".github/copilot-instructions.md") is True
+        assert inspector.check_file_exists("org", "repo", "CODEOWNERS") is False
+        assert inspector.check_file_exists("org", "repo", ".devcontainer/devcontainer.json") is False
+        assert inspector.get_file_content("org", "repo", ".github/dependabot.yml") is None
+        assert mock_get.call_count == 0
+
+    # Discovering workflows should also read from tree cache with 0 API calls
+    with patch.object(mock_client, "get") as mock_get:
+        wfs = inspector.list_workflows("org", "repo", "main")
+        assert len(wfs) == 1
+        assert wfs[0]["name"] == "build.yml"
+        assert mock_get.call_count == 0
+
+

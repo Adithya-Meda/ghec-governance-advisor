@@ -9,9 +9,11 @@ warnings.filterwarnings("ignore", message=".*automatic function calling.*")
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import argparse
+import concurrent.futures
 import logging
 import os
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -249,8 +251,9 @@ def run_audit(
     advisory_config: Dict[str, Any],
     ai_engine: Optional[AIEngine] = None,
     orgs: Optional[List[str]] = None,
+    max_workers: Optional[int] = None,
 ) -> List[CheckResult]:
-    """Execute all enabled checks across target organizations and repositories."""
+    """Execute all enabled checks across target organizations and repositories with high concurrency."""
     results: List[CheckResult] = []
     enabled_checks = advisory_config.get("enabled_checks", {})
     thresholds = advisory_config.get("policy_thresholds", {})
@@ -273,16 +276,41 @@ def run_audit(
                 except Exception as err:
                     logger.warning("Check %s failed on org %s: %s", check_instance.check_id, org, err)
 
-    # 2. Evaluate Repository & Contributor Checks
+    if not targets:
+        return results
+
+    # 2. Evaluate Repository & Contributor Checks concurrently
     total_repos = len(targets)
-    for idx, target in enumerate(targets, start=1):
+    pool_workers = max_workers or min(10, max(2, (os.cpu_count() or 4) * 2))
+    pool_workers = min(pool_workers, total_repos)
+
+    repo_results_by_idx: Dict[int, List[CheckResult]] = {}
+    completed_lock = threading.Lock()
+    completed_count = 0
+
+    def _audit_single_target(idx: int, target: RepoTarget) -> List[CheckResult]:
+        nonlocal completed_count
+        repo_res: List[CheckResult] = []
         tech_stack: Dict[str, Any] = {}
-        if ai_engine and ai_engine.is_available():
+
+        try:
+            # Prefetch entire repository file tree in 1 API call to eliminate N+1 file existence checks
+            inspector.prefetch_repo_tree(target.org_name, target.repo_name, target.default_branch)
+        except Exception as err:
+            logger.debug("Tree prefetch skipped on %s/%s: %s", target.org_name, target.repo_name, err)
+
+        try:
             tech_stack = inspector.detect_tech_stack(
                 target.org_name, target.repo_name, target.default_branch
             )
+        except Exception as err:
+            logger.debug("Tech stack detection failed on %s/%s: %s", target.org_name, target.repo_name, err)
+            tech_stack = {"languages": ["General Software"]}
 
-        _log_repo_banner(idx, total_repos, target, tech_stack)
+        with completed_lock:
+            completed_count += 1
+            current_progress = completed_count
+            _log_repo_banner(current_progress, total_repos, target, tech_stack)
 
         # Evaluate Repo Admin Checks
         if "all" in target.target_personas or "repo_admin" in target.target_personas:
@@ -297,10 +325,11 @@ def run_audit(
                             target.default_branch,
                             thresholds,
                         )
-                        if ai_engine and ai_engine.is_available():
+                        if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
                             ai_engine.enrich_remediation(res, tech_stack)
-                        results.append(res)
-                        _log_finding(res)
+                        repo_res.append(res)
+                        with completed_lock:
+                            _log_finding(res)
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -323,10 +352,11 @@ def run_audit(
                             target.default_branch,
                             thresholds,
                         )
-                        if ai_engine and ai_engine.is_available():
+                        if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
                             ai_engine.enrich_remediation(res, tech_stack)
-                        results.append(res)
-                        _log_finding(res)
+                        repo_res.append(res)
+                        with completed_lock:
+                            _log_finding(res)
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -335,6 +365,29 @@ def run_audit(
                             target.repo_name,
                             err,
                         )
+
+        return repo_res
+
+    if pool_workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
+            future_to_idx = {
+                executor.submit(_audit_single_target, idx, target): idx
+                for idx, target in enumerate(targets, start=1)
+            }
+            for future in concurrent.futures.as_completed(future_to_idx):
+                target_idx = future_to_idx[future]
+                try:
+                    repo_results_by_idx[target_idx] = future.result()
+                except Exception as exc:
+                    logger.error("Audit worker failed for repository #%d: %s", target_idx, exc)
+                    repo_results_by_idx[target_idx] = []
+    else:
+        for idx, target in enumerate(targets, start=1):
+            repo_results_by_idx[idx] = _audit_single_target(idx, target)
+
+    # Flatten in deterministic target order
+    for idx in sorted(repo_results_by_idx.keys()):
+        results.extend(repo_results_by_idx[idx])
 
     return results
 
