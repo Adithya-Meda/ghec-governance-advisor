@@ -234,6 +234,7 @@ def write_activity_workbook(
     repos_scanned: int,
     management_tables: Optional[Dict[str, Tuple[Tuple[str, ...], List[list]]]] = None,
     execution_duration: Optional[float] = None,
+    ai_engine: Optional[Any] = None,
 ) -> None:
     """Generate high-fidelity executive Excel workbook for user activity and adoption trends."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -255,12 +256,31 @@ def write_activity_workbook(
 
     status_counts = Counter(row[STATUS_IDX] for row in user_rows)
     total_activities = sum(row[TOTAL_IDX] for row in user_rows)
+    active_contributors = sum(1 for r in user_rows if r[TOTAL_IDX] > 0)
+    total_commits = sum(row[TOTAL_IDX + 1] for row in user_rows) if user_rows else 0
+    prs_opened = sum(row[TOTAL_IDX + 2] for row in user_rows) if user_rows else 0
+    prs_merged = sum(row[TOTAL_IDX + 3] for row in user_rows) if user_rows else 0
+    org_names = ", ".join(str(r[0]) for r in org_rows) if org_rows else "Monitored Fleet"
+
+    advisory_text = (
+        ai_engine.generate_activity_insights(
+            org_name=org_names,
+            total_contributors=len(user_rows),
+            active_contributors=active_contributors,
+            total_activities=total_activities,
+            total_commits=total_commits,
+            prs_opened=prs_opened,
+            prs_merged=prs_merged,
+        )
+        if ai_engine is not None
+        else f"Engineering activity across {org_names}: {active_contributors} active contributors ({total_activities} actions, {prs_merged} PRs merged). Maintain balanced code review assignments to prevent reviewer fatigue."
+    )
 
     kpis = [
         ["Total Duration", duration_str],
         ["Organizations Scanned", len(org_rows)],
         ["Repositories Scanned", repos_scanned],
-        ["Active Contributors", sum(1 for r in user_rows if r[TOTAL_IDX] > 0)],
+        ["Active Contributors", active_contributors],
         ["Total Users Reported", len(user_rows)],
         *([f"{s} Users", status_counts[s]] for s in STATUSES),
         ["Total Activities", total_activities],
@@ -268,6 +288,12 @@ def write_activity_workbook(
         ["Unprocessed Items", len(failures)],
     ]
     curr_row = write_table(summary, 4, ("Metric", "Value"), kpis) + 2
+
+    curr_row = section_title(summary, curr_row, "AI Contributor Cadence & Collaboration Summary")
+    summary.cell(curr_row, 1, advisory_text)
+    summary.cell(curr_row, 1).font = Font(name="Calibri", size=10, italic=True)
+    summary.row_dimensions[curr_row].height = 28
+    curr_row += 2
 
     curr_row = section_title(summary, curr_row, "Organization Governance & Activity Overview")
     curr_row = write_table(summary, curr_row, ORG_HEADERS, org_rows, bar_col=len(ORG_HEADERS) - 1) + 2

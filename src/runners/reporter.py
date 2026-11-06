@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,6 +33,7 @@ def write_runners_workbook(
     org_runner_rows: List[list],
     failures: List[Tuple[str, str]],
     execution_duration: Optional[float] = None,
+    ai_engine: Optional[Any] = None,
 ) -> None:
     """Generate executive Excel workbook for self-hosted runner fleet utilization."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +61,34 @@ def write_runners_workbook(
     total_compute_hours = sum(r[19] for r in runner_rows if len(r) > 19 and isinstance(r[19], (int, float)))
     total_jobs_run = sum(r[13] for r in runner_rows if len(r) > 13 and isinstance(r[13], int))
     total_sla_breaches = sum(r[26] for r in runner_rows if len(r) > 26 and isinstance(r[26], int))
+    availability_pct = round((online_count / total_runners * 100), 1) if total_runners else 0.0
+
+    avg_waits = [r[24] for r in runner_rows if len(r) > 24 and isinstance(r[24], (int, float))]
+    avg_queue_wait_s = float(statistics.mean(avg_waits)) if avg_waits else 0.0
+    p95_waits = [r[25] for r in runner_rows if len(r) > 25 and isinstance(r[25], (int, float))]
+    p95_queue_wait_s = float(statistics.mean(p95_waits)) if p95_waits else 0.0
+
+    advisory_text = (
+        ai_engine.generate_runner_fleet_advisory(
+            total_runners=total_runners,
+            availability_pct=availability_pct,
+            busy_count=busy_count,
+            avg_queue_wait_s=avg_queue_wait_s,
+            p95_queue_wait_s=p95_queue_wait_s,
+            sla_breaches=total_sla_breaches,
+            ephemeral_count=ephemeral_count,
+        )
+        if ai_engine is not None
+        else (
+            f"Queue latency breaches 60s SLA ({total_sla_breaches} jobs delayed, P95: {p95_queue_wait_s:.0f}s). Adopt Actions Runner Controller (ARC) with HorizontalRunnerAutoscaler to dynamically expand runner capacity during peak build windows."
+            if (total_sla_breaches > 0 or p95_queue_wait_s > 60)
+            else (
+                f"Persistent runner sprawl detected ({total_runners - ephemeral_count} non-ephemeral). Migrate to ephemeral container runner scale sets to ensure reproducible CI environments and prevent security cross-contamination."
+                if (ephemeral_count < (total_runners / 2) and total_runners > 0)
+                else "Runner fleet capacity is well-provisioned. Availability and queue latency remain within target SLAs."
+            )
+        )
+    )
 
     kpis = [
         ["Total Duration", duration_str],
@@ -74,6 +104,12 @@ def write_runners_workbook(
         ["Unprocessed Items / Errors", len(failures)],
     ]
     curr_row = write_table(summary, 4, ("Metric", "Fleet Aggregate"), kpis) + 2
+
+    curr_row = section_title(summary, curr_row, "AI Fleet Advisory & Autoscaling Guidance")
+    summary.cell(curr_row, 1, advisory_text)
+    summary.cell(curr_row, 1).font = Font(name="Calibri", size=10, italic=True)
+    summary.row_dimensions[curr_row].height = 28
+    curr_row += 2
 
     curr_row = section_title(summary, curr_row, "Organization Fleet Breakdown")
     curr_row = write_table(summary, curr_row, ORG_RUNNER_HEADERS, org_runner_rows, bar_col=1) + 2

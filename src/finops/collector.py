@@ -270,6 +270,7 @@ def build_finops_rows(
     profiles: List[RepoStorageProfile],
     org_packages: Dict[str, List[PackageRecord]],
     orgs: List[str],
+    ai_engine: Optional[Any] = None,
 ) -> Tuple[List[list], List[list], List[list], List[list]]:
     """Build structured data rows for each sheet in the FinOps Excel workbook."""
     repo_rows: List[list] = []
@@ -281,6 +282,17 @@ def build_finops_rows(
     org_profiles: Dict[str, List[RepoStorageProfile]] = {org: [] for org in orgs}
     for p in profiles:
         org_profiles.setdefault(p.org, []).append(p)
+
+        rec = p.recommendation
+        if ai_engine is not None:
+            rec = ai_engine.generate_finops_advisory(
+                repo=f"{p.org}/{p.repo}",
+                disk_size_mb=p.disk_size_mb,
+                artifact_mb=p.active_artifact_mb,
+                default_90d_count=p.default_90_day_count,
+                stale_cache_count=len([c for c in p.caches if c.is_stale]),
+                optimization_status=p.optimization_status,
+            )
 
         # Repo row
         repo_rows.append([
@@ -296,7 +308,7 @@ def build_finops_rows(
             len(p.packages),
             p.total_storage_mb,
             p.optimization_status,
-            p.recommendation,
+            rec,
         ])
 
         # Artifact detail rows

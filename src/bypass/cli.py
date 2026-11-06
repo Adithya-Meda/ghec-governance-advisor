@@ -104,9 +104,27 @@ def run_bypass_cli(argv: Optional[List[str]] = None) -> int:
         default=6,
         help="Concurrent repository worker threads (default: 6).",
     )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="Disable AI risk assessment and use deterministic policy rules only.",
+    )
+    parser.add_argument(
+        "--require-ai",
+        action="store_true",
+        help="Halt execution if AI engine connection fails or is not configured.",
+    )
 
     args = parser.parse_args(argv)
     start_time = time.time()
+
+    # Initialize AI Engine (Multi-provider: Gemini, OpenAI, Claude)
+    from ..ai import init_ai_engine
+    try:
+        ai_engine = init_ai_engine(require_ai=args.require_ai, no_ai=args.no_ai)
+    except Exception as exc:
+        print(f"\n\033[91m[FAIL] {exc}\033[0m\n")
+        return 1
 
     # 1. Resolve Credentials
     creds = resolve_runtime_credentials()
@@ -173,7 +191,7 @@ def run_bypass_cli(argv: Optional[List[str]] = None) -> int:
 
     print(f"\033[96m[INFO]\033[0m Auditing push protection exemptions and branch ruleset overrides across {len(orgs)} org(s)...")
 
-    profiles = collect_bypass_data(client, orgs, targets, since, cfg, metadata_cache)
+    profiles = collect_bypass_data(client, orgs, targets, since, cfg, metadata_cache, ai_engine=ai_engine)
     push_rows, ruleset_rows, org_rows, actor_rows = build_bypass_rows(profiles, orgs)
 
     out_dir = Path(cfg.output_dir)

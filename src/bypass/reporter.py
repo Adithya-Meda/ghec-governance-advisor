@@ -105,6 +105,20 @@ def write_bypass_workbook(
     if push_rows:
         last_push = write_table(push_ws, 1, BYPASS_PUSH_PROTECTION_HEADERS, push_rows)
         finalize_sheet(push_ws, 1, last_push, len(BYPASS_PUSH_PROTECTION_HEADERS), "D2")
+
+        risk_col_idx = BYPASS_PUSH_PROTECTION_HEADERS.index("AI Risk Assessment") + 1
+        for r_idx in range(2, last_push + 1):
+            cell = push_ws.cell(r_idx, risk_col_idx)
+            val = str(cell.value).strip()
+            if "Critical" in val or "High" in val:
+                cell.fill = PatternFill("solid", fgColor="FFC7CE")
+                cell.font = Font(bold=True, color="9C0006")
+            elif "Moderate" in val:
+                cell.fill = PatternFill("solid", fgColor="FFEB9C")
+                cell.font = Font(bold=True, color="9C5700")
+            elif "Low" in val:
+                cell.fill = PatternFill("solid", fgColor="C6EFCE")
+                cell.font = Font(bold=True, color="006100")
     else:
         write_empty_table(
             push_ws,

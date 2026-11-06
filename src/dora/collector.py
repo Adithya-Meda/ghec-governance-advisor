@@ -303,6 +303,7 @@ def build_dora_rows(
     metrics_list: List[RepoDORAMetrics],
     orgs: List[str],
     window_days: int = 90,
+    ai_engine: Optional[Any] = None,
 ) -> Tuple[List[list], List[list], List[list], List[list]]:
     """Transform DORA metrics into structured table rows for Excel delivery."""
     repo_rows: List[list] = []
@@ -320,6 +321,31 @@ def build_dora_rows(
         lead_time_val = m.median_lead_time_hours if m.median_lead_time_hours is not None else "N/A"
         mttr_val = m.median_mttr_hours if m.median_mttr_hours is not None else "N/A"
 
+        if ai_engine is not None:
+            flow_advisory = ai_engine.diagnose_dora_flow(
+                repo=f"{m.org}/{m.repo}",
+                df_weekly=df_weekly,
+                df_tier=df_tier,
+                lead_time_hours=m.median_lead_time_hours,
+                lttc_tier=lttc_tier,
+                cfr_pct=m.change_failure_rate_pct,
+                cfr_tier=cfr_tier,
+                mttr_hours=m.median_mttr_hours,
+                mttr_tier=mttr_tier,
+                composite_tier=overall,
+            )
+        else:
+            flow_advisory = "Deployment cadence is within standard benchmarks. Maintain branch protection and CI automation."
+            if df_tier in ("Low", "Medium") and cfr_tier in ("Elite", "High"):
+                flow_advisory = "Low deployment frequency with stable change failure rate. Decompose batch sizes and automate staging rollouts."
+            elif cfr_tier in ("Low", "Medium"):
+                flow_advisory = "High change failure rate detected. Implement automated regression testing, canary verification, and pre-deployment linting."
+            elif lttc_tier in ("Low", "Medium"):
+                flow_advisory = "Elevated lead time for changes. Streamline code review SLAs and optimize CI test parallelization."
+            elif mttr_tier in ("Low", "Medium"):
+                flow_advisory = "Extended recovery duration. Adopt automated zero-downtime rollbacks and healthcheck-driven alerts."
+        m.flow_advisory = flow_advisory
+
         repo_rows.append([
             m.org,
             m.repo,
@@ -335,6 +361,7 @@ def build_dora_rows(
             cfr_tier,
             mttr_val,
             mttr_tier,
+            m.flow_advisory,
             m.total_releases,
             m.deploy_workflow_runs,
         ])

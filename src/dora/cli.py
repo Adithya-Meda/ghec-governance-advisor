@@ -112,9 +112,27 @@ def run_dora_cli(argv: Optional[List[str]] = None) -> int:
         default=6,
         help="Concurrent repository worker threads (default: 6).",
     )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="Disable AI flow diagnostics and use deterministic policy rules only.",
+    )
+    parser.add_argument(
+        "--require-ai",
+        action="store_true",
+        help="Halt execution if AI engine connection fails or is not configured.",
+    )
 
     args = parser.parse_args(argv)
     start_time = time.time()
+
+    # Initialize AI Engine (Multi-provider: Gemini, OpenAI, Claude)
+    from ..ai import init_ai_engine
+    try:
+        ai_engine = init_ai_engine(require_ai=args.require_ai, no_ai=args.no_ai)
+    except Exception as exc:
+        print(f"\n\033[91m[FAIL] {exc}\033[0m\n")
+        return 1
 
     # 1. Resolve Credentials
     creds = resolve_runtime_credentials()
@@ -171,7 +189,7 @@ def run_dora_cli(argv: Optional[List[str]] = None) -> int:
     print(f"\033[96m[INFO]\033[0m Measuring DORA flow metrics & recovery cadence across {len(orgs)} organization(s)...")
 
     metrics_list = collect_dora_data(client, orgs, targets, since, end, cfg, metadata_cache)
-    repo_rows, org_rows, deployment_rows, recovery_rows = build_dora_rows(metrics_list, orgs, cfg.lookback_days)
+    repo_rows, org_rows, deployment_rows, recovery_rows = build_dora_rows(metrics_list, orgs, cfg.lookback_days, ai_engine=ai_engine)
 
     out_dir = Path(cfg.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

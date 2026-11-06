@@ -42,6 +42,7 @@ DORA_REPO_HEADERS = (
     "CFR Tier",
     "Median MTTR (Hours)",
     "MTTR Tier",
+    "AI Flow Diagnostic & Advisory",
     "Total Releases",
     "Deploy Workflow Runs",
 )
@@ -174,6 +175,7 @@ class RepoDORAMetrics:
     incidents: List[RecoveryIncident] = field(default_factory=list)
     total_releases: int = 0
     deploy_workflow_runs: int = 0
+    flow_advisory: str = "-"
     errors: List[str] = field(default_factory=list)
 
     @property

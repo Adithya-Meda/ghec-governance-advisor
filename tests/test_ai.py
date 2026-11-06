@@ -343,3 +343,122 @@ def test_enrich_remediation_uses_cache(mock_client_cls: MagicMock) -> None:
     assert "# Cached Snippet" in result2.remediation_snippet_after
 
 
+def test_analyze_push_protection_bypass_deterministic() -> None:
+    """Verify deterministic fallback rules for push protection bypass risk assessment."""
+    engine = AIEngine(enabled=False)
+
+    # Empty comment -> Critical Risk
+    risk, adv = engine.analyze_push_protection_bypass("GitHub Personal Access Token", "")
+    assert risk == "Critical Risk"
+    assert "zero justification" in adv
+
+    # Urgent / bypass indicators -> High Risk
+    risk, adv = engine.analyze_push_protection_bypass("AWS Access Key", "urgent prod hotfix")
+    assert risk == "High Risk"
+    assert "High-risk bypass justification" in adv
+
+    # Test / mock indicators -> Low Risk
+    risk, adv = engine.analyze_push_protection_bypass("Stripe API Key", "unit test fixture mock")
+    assert risk == "Low Risk"
+    assert "test/fixture" in adv
+
+
+@patch.object(AIEngine, "_generate_text")
+def test_analyze_push_protection_bypass_ai(mock_gen: MagicMock) -> None:
+    """Verify AI model parsing for push protection bypass."""
+    mock_gen.return_value = "RISK: High Risk\nADVISORY: Active credential committed to production branch; revoke in IAM immediately."
+    engine = AIEngine(api_key="valid-key", enabled=True)
+    engine._available = True
+
+    risk, adv = engine.analyze_push_protection_bypass("AWS Access Key", "testing in staging", actor="developer1", repo="core-api")
+    assert risk == "High Risk"
+    assert "Active credential committed" in adv
+
+
+def test_diagnose_dora_flow_deterministic() -> None:
+    """Verify deterministic rules for DORA delivery bottleneck diagnosis."""
+    engine = AIEngine(enabled=False)
+
+    # High CFR -> test automation recommendation
+    diag = engine.diagnose_dora_flow(
+        repo="org/repo",
+        df_weekly=5.0,
+        df_tier="High",
+        lead_time_hours=2.0,
+        lttc_tier="High",
+        cfr_pct=35.0,
+        cfr_tier="Low",
+        mttr_hours=1.0,
+        mttr_tier="High",
+        composite_tier="Medium",
+    )
+    assert "change failure rate" in diag
+
+
+def test_generate_finops_advisory_deterministic() -> None:
+    """Verify deterministic FinOps recommendations for storage waste."""
+    engine = AIEngine(enabled=False)
+
+    adv = engine.generate_finops_advisory(
+        repo="my-org/backend",
+        disk_size_mb=250.0,
+        artifact_mb=800.0,
+        default_90d_count=12,
+        stale_cache_count=3,
+        optimization_status="High Waste",
+    )
+    assert "retention-days: 7" in adv
+    assert "purge 3 stale caches" in adv
+
+
+def test_generate_runner_fleet_advisory_deterministic() -> None:
+    """Verify deterministic runner fleet sizing recommendations."""
+    engine = AIEngine(enabled=False)
+
+    # SLA breaches -> ARC autoscaling
+    adv = engine.generate_runner_fleet_advisory(
+        total_runners=10,
+        availability_pct=80.0,
+        busy_count=8,
+        avg_queue_wait_s=45.0,
+        p95_queue_wait_s=95.0,
+        sla_breaches=15,
+        ephemeral_count=2,
+    )
+    assert "Actions Runner Controller (ARC)" in adv
+
+
+def test_generate_activity_insights_deterministic() -> None:
+    """Verify deterministic activity cadence summary."""
+    engine = AIEngine(enabled=False)
+
+    insight = engine.generate_activity_insights(
+        org_name="fintech-core",
+        total_contributors=25,
+        active_contributors=18,
+        total_activities=450,
+        total_commits=200,
+        prs_opened=40,
+        prs_merged=35,
+    )
+    assert "fintech-core" in insight
+    assert "18 active contributors" in insight
+
+
+def test_init_ai_engine_overrides() -> None:
+    """Verify init_ai_engine correctly processes --no-ai and --require-ai flags."""
+    from src.ai import init_ai_engine
+
+    # no_ai=True should yield disabled engine
+    eng = init_ai_engine(no_ai=True)
+    assert eng.enabled is False
+
+    # require_ai=True when no key or disabled should raise RuntimeError
+    try:
+        init_ai_engine(require_ai=True, no_ai=True)
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as exc:
+        assert "--require-ai" in str(exc)
+
+
+

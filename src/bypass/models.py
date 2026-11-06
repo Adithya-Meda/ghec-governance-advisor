@@ -31,6 +31,8 @@ BYPASS_PUSH_PROTECTION_HEADERS = (
     "Timestamp (IST)",
     "Resolution Reason",
     "Resolution Justification / Comment",
+    "AI Risk Assessment",
+    "AI Security Advisory",
     "Push Protection Overridden",
     "Alert URL",
 )
@@ -72,6 +74,8 @@ class PushProtectionBypassRecord:
     resolution_comment: str = "-"
     push_protection_bypassed: bool = True
     html_url: str = ""
+    ai_risk_assessment: str = "Unassessed"
+    ai_security_advisory: str = "-"
 
 
 @dataclass

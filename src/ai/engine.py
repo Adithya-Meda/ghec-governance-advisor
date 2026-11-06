@@ -583,3 +583,250 @@ Output ONLY the code/configuration snippet inside code fences. Do not add introd
         result.extra_details["detected_stack"] = languages
         result.extra_details["ai_model"] = self.model_name
         result.extra_details["ai_provider"] = self.provider
+
+    def analyze_push_protection_bypass(
+        self,
+        secret_type: str,
+        comment: str,
+        actor: str = "",
+        repo: str = "",
+    ) -> Tuple[str, str]:
+        """Classify push protection bypass risk and generate an actionable security advisory.
+
+        Returns:
+            Tuple of (risk_level, advisory_text)
+            e.g. ("High Risk", "Generic comment 'test'. Verify if live credential was pushed and rotate immediately.")
+        """
+        comment_clean = (comment or "").strip()
+        comment_lower = comment_clean.lower()
+        secret_clean = secret_type or "Secret"
+
+        test_indicators = ("test", "mock", "dummy", "sample", "example", "fixture", "unit test", "doc", "placeholder", "fake")
+        urgency_indicators = ("urgent", "temp", "bypass", "asap", "prod", "fix", "deploy", "quick", "skip", "override")
+
+        default_risk = "Moderate Risk"
+        default_advisory = f"Push protection was bypassed by {actor or 'developer'}. Review token entropy and commit history."
+
+        if not comment_clean or comment_clean in ("-", "--", "N/A", "None", "unspecified"):
+            default_risk = "Critical Risk"
+            default_advisory = "Push protection was bypassed with zero justification. Immediately inspect commit SHA and rotate credential if active."
+        elif any(w in comment_lower for w in urgency_indicators) and not any(w in comment_lower for w in test_indicators):
+            default_risk = "High Risk"
+            default_advisory = f"High-risk bypass justification ('{comment_clean}'). Verify whether live {secret_clean} was exposed and revoke if verified."
+        elif any(w in comment_lower for w in test_indicators):
+            default_risk = "Low Risk"
+            default_advisory = f"Developer noted test/fixture credential. Confirm pattern is not used in production environments."
+
+        if not self.is_available():
+            return default_risk, default_advisory
+
+        prompt = f"""You are a Principal Application Security Engineer. Evaluate this GitHub Secret Scanning Push Protection bypass:
+Secret Type: {self.sanitize_text(secret_clean)}
+Actor: {self.sanitize_text(actor or 'Unknown')}
+Repository: {self.sanitize_text(repo or 'Target')}
+Developer Justification: "{self.sanitize_text(comment_clean)}"
+
+Analyze whether this justification indicates a genuine test fixture, false positive, or an accidental leak of a production secret.
+Format your answer EXACTLY as:
+RISK: <Critical Risk | High Risk | Moderate Risk | Low Risk>
+ADVISORY: <1 concise sentence specifying verification action for SecOps>"""
+
+        response = self._generate_text(prompt)
+        if not response:
+            return default_risk, default_advisory
+
+        try:
+            risk = default_risk
+            advisory = default_advisory
+            for line in response.splitlines():
+                line_str = line.strip()
+                if line_str.upper().startswith("RISK:"):
+                    raw_risk = line_str.split(":", 1)[1].strip()
+                    for valid in ("Critical Risk", "High Risk", "Moderate Risk", "Low Risk"):
+                        if valid.lower() in raw_risk.lower():
+                            risk = valid
+                            break
+                elif line_str.upper().startswith("ADVISORY:"):
+                    advisory = line_str.split(":", 1)[1].strip()
+            return risk, advisory
+        except Exception:
+            return default_risk, default_advisory
+
+    def diagnose_dora_flow(
+        self,
+        repo: str = "",
+        df_weekly: float = 0.0,
+        df_tier: str = "Low",
+        lead_time_hours: Optional[float] = None,
+        lttc_tier: str = "Low",
+        cfr_pct: float = 0.0,
+        cfr_tier: str = "Low",
+        mttr_hours: Optional[float] = None,
+        mttr_tier: str = "Low",
+        composite_tier: str = "Low",
+    ) -> str:
+        """Diagnose delivery flow bottlenecks and prescribe actionable engineering improvements."""
+        lt_str = f"{lead_time_hours:.1f}h" if lead_time_hours is not None else "N/A"
+        mttr_str = f"{mttr_hours:.1f}h" if mttr_hours is not None else "N/A"
+
+        if cfr_pct > 15.0 or cfr_tier in ("Low", "Medium"):
+            default_rec = f"Elevated change failure rate ({cfr_pct:.1f}%). Strengthen automated regression testing, integration gates, and canary deployment stages."
+        elif (lead_time_hours is not None and lead_time_hours > 48.0) or lttc_tier in ("Low", "Medium"):
+            default_rec = f"Lead time bottleneck ({lt_str}). Reduce PR batch size, enforce single-piece flow, and parallelize CI build/test steps."
+        elif df_weekly < 1.0 or df_tier in ("Low", "Medium"):
+            default_rec = f"Deployment cadence is low ({df_weekly:.1f}/week). Decouple release branches and transition to trunk-based continuous delivery."
+        elif composite_tier == "Elite":
+            default_rec = "Elite DORA delivery performance. Maintain automated testing coverage and current trunk-based release cadence."
+        else:
+            default_rec = "Balanced engineering flow. Continue monitoring pull request review turnaround and test pipeline duration."
+
+        if not self.is_available():
+            return default_rec
+
+        prompt = f"""You are a Principal DevOps and Delivery Flow Architect. Diagnose delivery bottlenecks for repository '{self.sanitize_text(repo)}':
+- Composite Performance Tier: {composite_tier}
+- Deployment Frequency: {df_weekly:.1f} per week ({df_tier})
+- Lead Time for Changes: {lt_str} ({lttc_tier})
+- Change Failure Rate: {cfr_pct:.1f}% ({cfr_tier})
+- Mean Time to Recovery (MTTR): {mttr_str} ({mttr_tier})
+
+Provide ONLY 1-2 concise, highly actionable sentences identifying the primary delivery constraint and prescribing concrete platform engineering changes to reach Elite tier. No chat or filler."""
+
+        res = self._generate_text(prompt)
+        return res.strip() if res else default_rec
+
+    def generate_finops_advisory(
+        self,
+        repo: str,
+        disk_size_mb: float,
+        artifact_mb: float,
+        default_90d_count: int,
+        stale_cache_count: int,
+        optimization_status: str,
+    ) -> str:
+        """Generate tailored storage quota and workflow artifact retention recommendations."""
+        if default_90d_count > 0 and stale_cache_count > 0:
+            default_rec = f"Override default 90-day retention with 'retention-days: 7' in workflow files ({default_90d_count} artifacts) and purge {stale_cache_count} stale caches."
+        elif default_90d_count > 0:
+            default_rec = f"Configure 'retention-days: 7' on {default_90d_count} workflow artifacts to eliminate default 90-day storage waste."
+        elif stale_cache_count > 0:
+            default_rec = f"Purge {stale_cache_count} stale Actions caches unaccessed for 30+ days via GitHub Actions Cache API."
+        elif disk_size_mb > 1000:
+            default_rec = f"Large Git repository footprint ({disk_size_mb:.1f} MB). Run git-filter-repo or migrate heavy binaries to Git LFS."
+        elif optimization_status == "Optimized":
+            default_rec = "Storage profile is well-optimized with efficient artifact retention and active cache usage."
+        else:
+            default_rec = "Review artifact retention policies and purge unneeded build dependencies."
+
+        if not self.is_available():
+            return default_rec
+
+        prompt = f"""You are a Cloud FinOps and CI/CD Infrastructure Architect. Analyze repository '{self.sanitize_text(repo)}':
+- Git Disk Footprint: {disk_size_mb:.1f} MB
+- Workflow Artifact Storage: {artifact_mb:.1f} MB
+- Artifacts using Default 90-day Retention: {default_90d_count}
+- Stale Actions Caches (>30d unaccessed): {stale_cache_count}
+- Optimization Status: {optimization_status}
+
+Provide ONLY 1-2 concise sentences prescribing precise configuration fixes (.github/workflows YAML retention settings or cache purging). No conversational filler."""
+
+        res = self._generate_text(prompt)
+        return res.strip() if res else default_rec
+
+    def generate_runner_fleet_advisory(
+        self,
+        total_runners: int,
+        availability_pct: float,
+        busy_count: int,
+        avg_queue_wait_s: float,
+        p95_queue_wait_s: float,
+        sla_breaches: int,
+        ephemeral_count: int,
+    ) -> str:
+        """Generate autoscaling and runner fleet sizing advisory."""
+        if sla_breaches > 0 or p95_queue_wait_s > 60:
+            default_rec = f"Queue latency breaches 60s SLA ({sla_breaches} jobs delayed, P95: {p95_queue_wait_s:.0f}s). Adopt Actions Runner Controller (ARC) with HorizontalRunnerAutoscaler to dynamically expand runner capacity during peak build windows."
+        elif ephemeral_count < (total_runners / 2) and total_runners > 0:
+            default_rec = f"Persistent runner sprawl detected ({total_runners - ephemeral_count} non-ephemeral). Migrate to ephemeral container runner scale sets to ensure reproducible CI environments and prevent security cross-contamination."
+        else:
+            default_rec = "Runner fleet capacity is well-provisioned. Availability and queue latency remain within target SLAs."
+
+        if not self.is_available():
+            return default_rec
+
+        prompt = f"""You are a Principal CI/CD Infrastructure Architect. Analyze this GitHub Actions self-hosted runner fleet:
+- Total Runners: {total_runners}
+- Availability: {availability_pct:.1f}%
+- Currently Busy: {busy_count}
+- P95 Queue Latency: {p95_queue_wait_s:.1f}s
+- Jobs Breaching 60s Queue SLA: {sla_breaches}
+- Ephemeral Runners: {ephemeral_count} / {total_runners}
+
+Provide ONLY 2 concise sentences with clear architectural recommendations on autoscaling policies (ARC, KEDA) and runner pool sizing."""
+
+        res = self._generate_text(prompt)
+        return res.strip() if res else default_rec
+
+    def generate_activity_insights(
+        self,
+        org_name: str,
+        total_contributors: int,
+        active_contributors: int,
+        total_activities: int,
+        total_commits: int,
+        prs_opened: int,
+        prs_merged: int,
+    ) -> str:
+        """Synthesize engineering activity trends and contributor cadence."""
+        default_rec = f"Engineering activity across {org_name}: {active_contributors} active contributors ({total_activities} actions, {prs_merged} PRs merged). Maintain balanced code review assignments to prevent reviewer fatigue."
+
+        if not self.is_available():
+            return default_rec
+
+        prompt = f"""You are an Engineering Operations Director. Analyze contributor activity for '{self.sanitize_text(org_name)}':
+- Total Contributors Tracked: {total_contributors}
+- Active Contributors: {active_contributors}
+- Total Activities: {total_activities}
+- Commits: {total_commits}
+- PRs Opened / Merged: {prs_opened} / {prs_merged}
+
+Provide ONLY 2 concise sentences summarizing development cadence and workload distribution. No chat or filler."""
+
+        res = self._generate_text(prompt)
+        return res.strip() if res else default_rec
+
+
+def init_ai_engine(
+    require_ai: bool = False,
+    no_ai: bool = False,
+) -> AIEngine:
+    """Initialize AIEngine with credentials, healthcheck, and CLI overrides."""
+    from ..credentials import resolve_runtime_credentials
+
+    creds = resolve_runtime_credentials()
+    provider = creds.get("llm_provider", "gemini")
+    ai_model = creds.get("llm_model", "gemini-3.5-flash")
+    llm_api_key = creds.get("llm_api_key", "")
+    llm_enabled = bool(creds.get("llm_enabled", True)) and not no_ai
+
+    ai_engine = AIEngine(
+        api_key=llm_api_key,
+        model_name=ai_model,
+        provider=provider,
+        enabled=llm_enabled,
+    )
+
+    if llm_enabled and ai_engine.is_available():
+        is_ok, reason = ai_engine.verify_connection()
+        if not is_ok:
+            logger.warning(
+                "AI Remediation Engine: OFFLINE (%s). "
+                "Calculations will proceed using deterministic policy rules.",
+                reason,
+            )
+            if require_ai:
+                raise RuntimeError(f"--require-ai was specified but AI engine is offline: {reason}")
+    elif require_ai:
+        raise RuntimeError("--require-ai was specified but AI engine is disabled or not configured.")
+
+    return ai_engine

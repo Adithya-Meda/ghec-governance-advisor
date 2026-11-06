@@ -27,6 +27,7 @@ def collect_repo_push_bypasses(
     org: str,
     repo: str,
     since: datetime,
+    ai_engine: Optional[Any] = None,
 ) -> List[PushProtectionBypassRecord]:
     """Retrieve secret scanning alerts with push protection bypass flags or resolved exemptions."""
     records: List[PushProtectionBypassRecord] = []
@@ -56,6 +57,17 @@ def collect_repo_push_bypasses(
             if ts and ts < since:
                 continue
 
+            # Assess risk using AI engine or deterministic policy defaults
+            risk = "Moderate Risk"
+            advisory = f"Push protection was bypassed by {actor}. Review resolution comment: '{comment}'."
+            if ai_engine is not None:
+                risk, advisory = ai_engine.analyze_push_protection_bypass(
+                    secret_type=secret_type,
+                    comment=comment,
+                    actor=actor,
+                    repo=repo,
+                )
+
             records.append(
                 PushProtectionBypassRecord(
                     org=org,
@@ -68,6 +80,8 @@ def collect_repo_push_bypasses(
                     resolution_comment=comment,
                     push_protection_bypassed=is_bypassed,
                     html_url=html_url,
+                    ai_risk_assessment=risk,
+                    ai_security_advisory=advisory,
                 )
             )
     except requests.HTTPError as err:
@@ -138,10 +152,11 @@ def profile_repo_bypasses(
     repo: str,
     since: datetime,
     meta: Dict[str, Any],
+    ai_engine: Optional[Any] = None,
 ) -> RepoBypassProfile:
     """Collect push protection overrides and ruleset bypasses for a repository."""
     profile = RepoBypassProfile(org=org, repo=repo)
-    profile.push_bypasses = collect_repo_push_bypasses(client, org, repo, since)
+    profile.push_bypasses = collect_repo_push_bypasses(client, org, repo, since, ai_engine=ai_engine)
     profile.ruleset_bypasses = collect_repo_ruleset_bypasses(client, org, repo, since)
     return profile
 
@@ -153,6 +168,7 @@ def collect_bypass_data(
     since: datetime,
     cfg: BypassConfig,
     metadata_cache: Dict[Tuple[str, str], Dict[str, Any]],
+    ai_engine: Optional[Any] = None,
 ) -> List[RepoBypassProfile]:
     """Collect bypass records across all targets using thread pooling."""
     profiles: List[RepoBypassProfile] = []
@@ -163,7 +179,7 @@ def collect_bypass_data(
             future_to_target = {}
             for org, repo in targets:
                 meta = metadata_cache.get((org.casefold(), repo.casefold()), {})
-                fut = executor.submit(profile_repo_bypasses, client, org, repo, since, meta)
+                fut = executor.submit(profile_repo_bypasses, client, org, repo, since, meta, ai_engine)
                 future_to_target[fut] = (org, repo)
 
             for fut in as_completed(future_to_target):
@@ -211,6 +227,8 @@ def build_bypass_rows(
                 ts_ist,
                 push.resolution,
                 push.resolution_comment,
+                push.ai_risk_assessment,
+                push.ai_security_advisory,
                 override_flag,
                 push.html_url or "-",
             ])
