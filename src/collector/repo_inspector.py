@@ -28,6 +28,12 @@ class RepoInspector:
         self._repo_metadata_cache: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
         self._repo_rulesets_cache: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         self._repo_protection_cache: Dict[Tuple[str, str, str], Optional[Dict[str, Any]]] = {}
+        self._repo_environments_cache: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+
+    def seed_repo_metadata(self, org: str, repo: str, metadata: Dict[str, Any]) -> None:
+        """Pre-populate repository metadata cache from bulk discovery data to eliminate redundant API calls."""
+        if org and repo and metadata and isinstance(metadata, dict):
+            self._repo_metadata_cache[(org, repo)] = metadata
 
     def prefetch_repo_tree(
         self, org: str, repo: str, ref: str = "main"
@@ -252,11 +258,14 @@ class RepoInspector:
         return workflows
 
     def get_environments(self, org: str, repo: str) -> List[Dict[str, Any]]:
-        """Fetch deployment environments configured for the repository."""
+        """Fetch deployment environments configured for the repository with caching."""
+        cache_key = (org, repo)
+        if cache_key in self._repo_environments_cache:
+            return self._repo_environments_cache[cache_key]
         data = self.client.get(f"/repos/{org}/{repo}/environments", allow_404=True)
-        if isinstance(data, dict) and "environments" in data:
-            return data["environments"]
-        return []
+        res = data.get("environments", []) if isinstance(data, dict) and "environments" in data else []
+        self._repo_environments_cache[cache_key] = res
+        return res
 
     def check_file_exists(
         self, org: str, repo: str, path: str, ref: str = "main"

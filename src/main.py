@@ -205,20 +205,30 @@ def _log_repo_banner(
     tech_stack: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Log an executive progress banner indicating the repository currently being evaluated."""
-    pct = int((idx / total) * 100) if total > 0 else 100
-    bar_length = 15
-    filled_len = max(1, int(round(bar_length * idx / total))) if (idx > 0 and total > 0) else 0
-    filled_len = min(filled_len, bar_length)
+    bar_length = 20
+    ratio = min(max(idx / total, 0.0), 1.0) if total > 0 else 1.0
+    exact_pos = ratio * bar_length
+    filled_chars = int(exact_pos)
+    fraction = exact_pos - filled_chars
 
-    if 0 < filled_len < bar_length:
-        filled_str = "=" * (filled_len - 1) + ">"
-    elif filled_len >= bar_length:
-        filled_str = "=" * bar_length
+    if filled_chars >= bar_length:
+        bar_fill = "=" * bar_length
+        bar_empty = ""
     else:
-        filled_str = ""
+        # Dynamic leading-edge indicator: advances through sub-steps ('.', '-', '=', '>')
+        # so the bar shows continuous forward motion between full character increments
+        if fraction < 0.25:
+            tip = "."
+        elif fraction < 0.50:
+            tip = "-"
+        elif fraction < 0.75:
+            tip = "="
+        else:
+            tip = ">"
 
-    unfilled_len = max(0, bar_length - len(filled_str))
-    unfilled_str = "-" * unfilled_len
+        bar_fill = ("=" * filled_chars) + tip
+        unfilled_len = max(0, bar_length - len(bar_fill))
+        bar_empty = "-" * unfilled_len
 
     stack_str = ""
     if tech_stack:
@@ -234,8 +244,14 @@ def _log_repo_banner(
     X = "\033[0m"    # Reset
 
     pad = len(str(total))
-    pct_badge = f"{B}{Y}[{pct:3d}% | {idx:>{pad}}/{total}]{X}"
-    bar_badge = f"{C}[{B}{filled_str}{X}{D}{unfilled_str}{C}]{X}"
+    if total >= 100:
+        pct_val = (idx / total * 100) if total > 0 else 100.0
+        pct_badge = f"{B}{Y}[{pct_val:5.1f}% | {idx:>{pad}}/{total}]{X}"
+    else:
+        pct_int = int(round(idx / total * 100)) if total > 0 else 100
+        pct_badge = f"{B}{Y}[{pct_int:3d}% | {idx:>{pad}}/{total}]{X}"
+
+    bar_badge = f"{C}[{B}{bar_fill}{X}{D}{bar_empty}{C}]{X}"
     repo_title = f"{B}{W}{target.org_name}/{target.repo_name}{X}"
     branch_info = f"{D}(branch: {target.default_branch}{stack_str}){X}"
 
@@ -281,8 +297,18 @@ def run_audit(
 
     # 2. Evaluate Repository & Contributor Checks concurrently
     total_repos = len(targets)
-    pool_workers = max_workers or min(10, max(2, (os.cpu_count() or 4) * 2))
-    pool_workers = min(pool_workers, total_repos)
+    if max_workers and max_workers > 0:
+        pool_workers = min(max_workers, total_repos)
+    else:
+        # Scale concurrency based on repository volume for I/O-bound HTTP workload
+        cpu_mult = (os.cpu_count() or 4) * 4
+        if total_repos >= 500:
+            default_limit = 32
+        elif total_repos >= 100:
+            default_limit = 24
+        else:
+            default_limit = 16
+        pool_workers = min(default_limit, max(4, cpu_mult), total_repos)
 
     repo_results_by_idx: Dict[int, List[CheckResult]] = {}
     completed_lock = threading.Lock()
@@ -316,11 +342,6 @@ def run_audit(
         if stop_event.is_set():
             return []
 
-        with completed_lock:
-            completed_count += 1
-            current_progress = completed_count
-            _log_repo_banner(current_progress, total_repos, target, tech_stack)
-
         # Evaluate Repo Admin Checks
         if "all" in target.target_personas or "repo_admin" in target.target_personas:
             for check_cls in ALL_REPO_CHECKS:
@@ -339,8 +360,6 @@ def run_audit(
                         if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
                             ai_engine.enrich_remediation(res, tech_stack)
                         repo_res.append(res)
-                        with completed_lock:
-                            _log_finding(res)
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -368,8 +387,6 @@ def run_audit(
                         if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
                             ai_engine.enrich_remediation(res, tech_stack)
                         repo_res.append(res)
-                        with completed_lock:
-                            _log_finding(res)
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -378,6 +395,16 @@ def run_audit(
                             target.repo_name,
                             err,
                         )
+
+        if stop_event.is_set():
+            return []
+
+        with completed_lock:
+            completed_count += 1
+            current_progress = completed_count
+            _log_repo_banner(current_progress, total_repos, target, tech_stack)
+            for r in repo_res:
+                _log_finding(r)
 
         return repo_res
 
@@ -686,6 +713,12 @@ def _run_cli() -> int:
         action="store_true",
         help="Stop the audit if AI authentication fails, instead of falling back to standard built-in recommendations.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Optional concurrency worker thread count (defaults to auto-tuning up to 32 for large inventories).",
+    )
 
     args = parser.parse_args()
 
@@ -901,6 +934,7 @@ def _run_cli() -> int:
                         name = r.get("name", "")
                         default_branch = r.get("default_branch", "main") or "main"
                         if owner and name:
+                            inspector.seed_repo_metadata(owner, name, r)
                             targets.append(
                                 RepoTarget(
                                     org_name=owner,
@@ -931,7 +965,15 @@ def _run_cli() -> int:
                 logger.warning("No repositories found to audit. Ensure the GitHub App is installed on repositories.")
                 return 0
 
-            results = run_audit(inspector, targets, advisory_config, ai_engine=ai_engine, orgs=installed_org_logins)
+            workers_arg = args.workers if getattr(args, "workers", 0) > 0 else None
+            results = run_audit(
+                inspector,
+                targets,
+                advisory_config,
+                ai_engine=ai_engine,
+                orgs=installed_org_logins,
+                max_workers=workers_arg,
+            )
         except Exception as err:
             logger.error("Execution failed: %s", err)
             _print_failure_banner(f"Audit execution error: {err}")

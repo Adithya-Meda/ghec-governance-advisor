@@ -161,3 +161,73 @@ def test_run_audit_keyboard_interrupt_stops_immediately():
             max_workers=2,
         )
 
+
+def test_log_repo_banner_advances_smoothly():
+    """Verify that _log_repo_banner dynamically advances bar indicator and percentage without freezing."""
+    import re
+    from src.main import _log_repo_banner, logger
+    from src.validator import RepoTarget
+
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    logged_messages = []
+    with patch.object(logger, "info", side_effect=lambda msg, *args: logged_messages.append(msg % args if args else msg)):
+        t = RepoTarget(org_name="org", repo_name="repo", target_personas={"all"})
+
+        # 1. Start of 700 repo audit
+        _log_repo_banner(1, 700, t)
+        first_banner = ansi_re.sub("", logged_messages[1])
+        assert "0.1%" in first_banner
+        assert "[.-------------------]" in first_banner
+
+        # 2. Advance to 5% (35 repos)
+        logged_messages.clear()
+        _log_repo_banner(35, 700, t)
+        mid_banner = ansi_re.sub("", logged_messages[1])
+        assert "5.0%" in mid_banner
+        assert "[=.------------------]" in mid_banner
+
+        # 3. Completion at 100%
+        logged_messages.clear()
+        _log_repo_banner(700, 700, t)
+        final_banner = ansi_re.sub("", logged_messages[1])
+        assert "100.0%" in final_banner
+        assert "[====================]" in final_banner
+
+
+def test_repo_inspector_seed_repo_metadata():
+    """Verify that seed_repo_metadata eliminates network round trips for repository metadata."""
+    from src.collector.repo_inspector import RepoInspector
+
+    mock_client = MagicMock()
+    inspector = RepoInspector(client=mock_client)
+
+    # Seed metadata
+    dummy_meta = {"name": "cached-repo", "language": "Go", "default_branch": "main"}
+    inspector.seed_repo_metadata("my-org", "cached-repo", dummy_meta)
+
+    # Fetch should return seeded data without calling mock_client
+    res = inspector.get_repo_metadata("my-org", "cached-repo")
+    assert res == dummy_meta
+    assert mock_client.get.call_count == 0
+
+
+def test_client_rate_limit_adaptive_delay_healthy():
+    """Verify that client executes with zero delay when rate limit quota is healthy (>=1000)."""
+    from src.collector.client import Repo360Client
+
+    mock_auth = MagicMock()
+    mock_auth.api_base_url = "https://api.github.com"
+    client = Repo360Client(auth=mock_auth, adaptive_delay_ms=20)
+
+    mock_resp = MagicMock()
+    mock_resp.headers = {
+        "x-ratelimit-remaining": "4500",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-reset": "1900000000",
+    }
+
+    with patch("time.sleep") as mock_sleep:
+        client._handle_rate_limit(mock_resp)
+        # Should NOT sleep when quota is healthy
+        assert mock_sleep.call_count == 0
+

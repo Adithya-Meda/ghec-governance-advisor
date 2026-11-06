@@ -64,7 +64,7 @@ class Repo360Client:
             status_forcelist=[502, 503, 504],
             raise_on_status=False,
         )
-        adapter = HTTPAdapter(max_retries=retries, pool_connections=25, pool_maxsize=25)
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=100, pool_maxsize=100)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
@@ -138,15 +138,13 @@ class Repo360Client:
                     max(0, (res or int(time.time())) - int(time.time())),
                 )
 
-        # Adaptive micro-delay to prevent burst secondary abuse triggers on large 1000+ inventories
+        # Adaptive micro-delay: execute at full wire speed when rate limit quota is healthy;
+        # throttle gracefully only when remaining quota is low or approaching reset
         if self.adaptive_delay_ms > 0:
-            # If remaining quota drops below 500, gently throttle delay
-            delay = (
-                (self.adaptive_delay_ms * 3 / 1000.0)
-                if (rem and rem < 500)
-                else (self.adaptive_delay_ms / 1000.0)
-            )
-            time.sleep(delay)
+            if rem is not None and rem < 500:
+                time.sleep((self.adaptive_delay_ms * 2) / 1000.0)
+            elif rem is not None and rem < 1000:
+                time.sleep((self.adaptive_delay_ms / 2) / 1000.0)
 
     @staticmethod
     def _extract_org_from_path(path_or_url: str) -> Optional[str]:
