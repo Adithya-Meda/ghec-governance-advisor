@@ -461,7 +461,7 @@ def run_wizard(
         auth = GitHubAppAuth(app_id=app_id, private_key=pem_key, api_base_url=api_domain)
         prompt_msg = (
             "Press Enter once you clicked 'Install' in the browser to auto-fetch your Installation ID\n"
-            "(or enter 'm' to input manually, 's' to skip and auto-discover during audit): "
+            "(or enter 'm' to input manually, 's' to skip and auto-discover at runtime): "
         )
         choice = input(prompt_msg).strip().lower()
 
@@ -487,12 +487,12 @@ def run_wizard(
 
             if not installation_id:
                 print("Could not auto-detect active installation yet.")
-                manual_in = input("Enter Installation ID manually (or press Enter to auto-discover during audit): ").strip()
+                manual_in = input("Enter Installation ID manually (or press Enter to auto-discover at runtime): ").strip()
                 if manual_in.isdigit():
                     installation_id = int(manual_in)
     except Exception as err:
         logger.debug("Installation discovery error: %s", err)
-        manual_in = input("Enter Installation ID manually (or press Enter to auto-discover during audit): ").strip()
+        manual_in = input("Enter Installation ID manually (or press Enter to auto-discover at runtime): ").strip()
         if manual_in.isdigit():
             installation_id = int(manual_in)
 
@@ -501,9 +501,9 @@ def run_wizard(
     print("  STEP 3: AI REMEDIATION & GOVERNANCE ADVISORY ENGINE")
     print("=" * 65)
     print("Select your AI Remediation Provider:")
-    print("  [1] Google Gemini (Recommended - default model: gemini-3.5-flash)")
-    print("  [2] OpenAI (default model: gpt-4o)")
-    print("  [3] Anthropic Claude (default model: claude-3-5-sonnet-20241022)")
+    print("  [1] Google Gemini")
+    print("  [2] OpenAI")
+    print("  [3] Anthropic Claude")
     print("  [4] None / Disable AI (Deterministic policy checks only)")
     print("-" * 65)
 
@@ -578,16 +578,16 @@ def run_wizard(
     print("=" * 65)
     print(f"  App Name:         {result.get('name')}")
     print(f"  App ID:           {app_id}")
-    print(f"  Installation ID:  {installation_id or 'Auto-discovered during audit'}")
+    print(f"  Installation ID:  {installation_id or 'Auto-discovered at runtime'}")
     print(f"  Private Key:      {key_path}")
     print(f"  Configuration:    {cfg_path}")
     ai_status = f"{llm_provider.upper()} ({llm_model})" if llm_enabled else "DISABLED"
     print(f"  AI Remediation:   {ai_status}")
     print("-" * 65)
     print("  Zero manual configuration files required!")
-    print("  Run your platform audit anytime from any directory:")
+    print("  Run your platform commands anytime from any directory:")
     print()
-    print("    repo360 audit")
+    print("    repo360 --help")
     print("=" * 65 + "\n")
 
 
