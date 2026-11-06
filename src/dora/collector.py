@@ -278,7 +278,8 @@ def collect_dora_data(
 
     if targets:
         workers = min(cfg.max_workers, len(targets))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=workers)
+        try:
             future_to_target = {}
             for org, repo in targets:
                 meta = metadata_cache.get((org.casefold(), repo.casefold()), {})
@@ -294,6 +295,11 @@ def collect_dora_data(
                     logger.warning("Error evaluating DORA metrics for %s/%s: %s", org, repo, err)
                     err_m = RepoDORAMetrics(org=org, repo=repo, errors=[str(err)])
                     results.append(err_m)
+        except (KeyboardInterrupt, SystemExit):
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     results.sort(key=lambda m: (m.org.lower(), m.repo.lower()))
     return results

@@ -242,7 +242,8 @@ def collect_finops_data(
     # 2. Collect repository storage and artifact profiles in parallel
     if targets:
         workers = min(cfg.max_workers, len(targets))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=workers)
+        try:
             future_to_target = {}
             for org, repo in targets:
                 meta = metadata_cache.get((org.casefold(), repo.casefold()), {})
@@ -261,6 +262,11 @@ def collect_finops_data(
                     logger.warning("Error profiling repository %s/%s: %s", org, repo, err)
                     err_profile = RepoStorageProfile(org=org, repo=repo, errors=[str(err)])
                     profiles.append(err_profile)
+        except (KeyboardInterrupt, SystemExit):
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     profiles.sort(key=lambda p: (p.org.lower(), p.repo.lower()))
     return profiles, org_packages

@@ -175,7 +175,8 @@ def collect_bypass_data(
 
     if targets:
         workers = min(cfg.max_workers, len(targets))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=workers)
+        try:
             future_to_target = {}
             for org, repo in targets:
                 meta = metadata_cache.get((org.casefold(), repo.casefold()), {})
@@ -190,6 +191,11 @@ def collect_bypass_data(
                 except Exception as err:
                     logger.warning("Error collecting bypasses for %s/%s: %s", org, repo, err)
                     profiles.append(RepoBypassProfile(org=org, repo=repo, errors=[str(err)]))
+        except (KeyboardInterrupt, SystemExit):
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     profiles.sort(key=lambda p: (p.org.lower(), p.repo.lower()))
     return profiles

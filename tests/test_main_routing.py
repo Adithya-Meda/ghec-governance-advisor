@@ -138,3 +138,26 @@ def test_run_audit_concurrent_execution():
 
     assert mock_inspector.prefetch_repo_tree.call_count == 3
     assert len(results) >= 3
+
+
+def test_run_audit_keyboard_interrupt_stops_immediately():
+    """Verify that KeyboardInterrupt during run_audit cancels executor and raises cleanly."""
+    from src.main import run_audit
+    from src.validator import RepoTarget
+
+    mock_inspector = MagicMock()
+    mock_inspector.prefetch_repo_tree.side_effect = KeyboardInterrupt()
+
+    targets = [
+        RepoTarget(org_name="fintech-core", repo_name="repo-1", target_personas={"all"}),
+    ]
+
+    with pytest.raises(KeyboardInterrupt):
+        run_audit(
+            inspector=mock_inspector,
+            targets=targets,
+            advisory_config={"enabled_checks": {}, "policy_thresholds": {}},
+            ai_engine=None,
+            max_workers=2,
+        )
+

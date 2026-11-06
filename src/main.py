@@ -287,8 +287,11 @@ def run_audit(
     repo_results_by_idx: Dict[int, List[CheckResult]] = {}
     completed_lock = threading.Lock()
     completed_count = 0
+    stop_event = threading.Event()
 
     def _audit_single_target(idx: int, target: RepoTarget) -> List[CheckResult]:
+        if stop_event.is_set():
+            return []
         nonlocal completed_count
         repo_res: List[CheckResult] = []
         tech_stack: Dict[str, Any] = {}
@@ -299,6 +302,9 @@ def run_audit(
         except Exception as err:
             logger.debug("Tree prefetch skipped on %s/%s: %s", target.org_name, target.repo_name, err)
 
+        if stop_event.is_set():
+            return []
+
         try:
             tech_stack = inspector.detect_tech_stack(
                 target.org_name, target.repo_name, target.default_branch
@@ -306,6 +312,9 @@ def run_audit(
         except Exception as err:
             logger.debug("Tech stack detection failed on %s/%s: %s", target.org_name, target.repo_name, err)
             tech_stack = {"languages": ["General Software"]}
+
+        if stop_event.is_set():
+            return []
 
         with completed_lock:
             completed_count += 1
@@ -315,6 +324,8 @@ def run_audit(
         # Evaluate Repo Admin Checks
         if "all" in target.target_personas or "repo_admin" in target.target_personas:
             for check_cls in ALL_REPO_CHECKS:
+                if stop_event.is_set():
+                    return []
                 check_instance = check_cls()
                 if check_instance.is_enabled(enabled_checks):
                     try:
@@ -342,6 +353,8 @@ def run_audit(
         # Evaluate Contributor & Freshers Checks
         if "all" in target.target_personas or "contributor" in target.target_personas:
             for check_cls in ALL_CONTRIBUTOR_CHECKS:
+                if stop_event.is_set():
+                    return []
                 check_instance = check_cls()
                 if check_instance.is_enabled(enabled_checks):
                     try:
@@ -369,18 +382,30 @@ def run_audit(
         return repo_res
 
     if pool_workers > 1:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=pool_workers, thread_name_prefix="audit-worker"
+        )
+        try:
             future_to_idx = {
                 executor.submit(_audit_single_target, idx, target): idx
                 for idx, target in enumerate(targets, start=1)
             }
             for future in concurrent.futures.as_completed(future_to_idx):
+                if stop_event.is_set():
+                    break
                 target_idx = future_to_idx[future]
                 try:
                     repo_results_by_idx[target_idx] = future.result()
                 except Exception as exc:
                     logger.error("Audit worker failed for repository #%d: %s", target_idx, exc)
                     repo_results_by_idx[target_idx] = []
+        except (KeyboardInterrupt, SystemExit):
+            stop_event.set()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            stop_event.set()
+            executor.shutdown(wait=False, cancel_futures=True)
     else:
         for idx, target in enumerate(targets, start=1):
             repo_results_by_idx[idx] = _audit_single_target(idx, target)
@@ -428,8 +453,13 @@ def main() -> int:
 
     def _graceful_exit(signum, frame):
         sig_name = "SIGTERM" if signum == getattr(signal, "SIGTERM", None) else "SIGINT (Ctrl+C)"
-        logger.warning("\n[TERMINATION] Received %s. Flushing output buffers and exiting cleanly...", sig_name)
-        sys.exit(128 + signum)
+        logger.warning("\n[TERMINATION] Received %s. Exiting immediately...", sig_name)
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        os._exit(128 + signum)
 
     signal.signal(signal.SIGINT, _graceful_exit)
     if hasattr(signal, "SIGTERM"):

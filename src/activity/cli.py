@@ -228,7 +228,8 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
 
     reports: Dict[Tuple[str, str], RepositoryReport] = {}
 
-    with ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="activity-worker") as pool:
+    pool = ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="activity-worker")
+    try:
         futures = {
             pool.submit(
                 collect_repository,
@@ -254,6 +255,11 @@ def run_activity_cli(argv: Optional[List[str]] = None) -> int:
             except Exception as exc:
                 failures.append((f"{org}/{repo}", str(exc)))
                 logger.warning("[%d/%d] Error scanning %s/%s: %s", done_idx, len(targets), org, repo, exc)
+    except (KeyboardInterrupt, SystemExit):
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     print(f"\033[96m[INFO]\033[0m Fetching organization members and teams...")
     members = fetch_members(client, orgs, cfg.exclude_bots, failures)

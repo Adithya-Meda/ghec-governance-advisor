@@ -264,7 +264,8 @@ def collect_runners_and_metrics(
         return loc_runners, loc_runner_metrics, loc_org_metrics, fail_item
 
     # Run workflow runs collection across worker pool
-    with ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="runner-pool") as pool:
+    pool = ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="runner-pool")
+    try:
         futures = {pool.submit(_scan_repo_runs, target): target for target in active_targets}
         for fut in as_completed(futures):
             loc_r, loc_rm, loc_om, failure = fut.result()
@@ -278,6 +279,11 @@ def collect_runners_and_metrics(
                 runner_metrics[k].merge(m)
             for ok, om in loc_om.items():
                 org_runner_metrics[ok].merge(om)
+    except (KeyboardInterrupt, SystemExit):
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     return runners, runner_metrics, org_runner_metrics
 
