@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 import time
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +60,18 @@ class AIEngine:
 
     # Backward compatibility alias for Gemini callers
     FALLBACK_MODELS = FALLBACK_MODELS_BY_PROVIDER["gemini"]
+
+    SUPPORTED_REMEDIATION_CHECKS: frozenset[str] = frozenset({
+        "copilot_instructions",
+        "devcontainers",
+        "dependabot_configuration",
+        "workflow_sha_pinning",
+        "workflow_concurrency_groups",
+        "codeowners_validation",
+        "pull_request_templates",
+        "issue_templates",
+        "pre_commit_hooks",
+    })
 
     def __init__(
         self,
@@ -109,6 +122,9 @@ class AIEngine:
         self._client: Optional[Any] = None
         self._gen_config: Optional[Any] = None
         self._remediation_cache: Dict[str, str] = {}
+        self._cache_lock = threading.Lock()
+        self._cache_cond = threading.Condition(self._cache_lock)
+        self._in_flight_keys: set[str] = set()
         self.init_error: Optional[str] = None
         self._circuit_cooldown_until: float = 0.0
         self._circuit_notified: bool = False
@@ -147,6 +163,15 @@ class AIEngine:
     def is_circuit_active(self) -> bool:
         """Check if AI circuit breaker is temporarily tripped due to upstream rate limits."""
         return time.time() < self._circuit_cooldown_until
+
+    def is_eligible_for_remediation(self, result: CheckResult) -> bool:
+        """Check if a CheckResult qualifies for AI remediation synthesis."""
+        return (
+            self.is_available()
+            and not self.is_circuit_active()
+            and result.status in (CheckStatus.WARN, CheckStatus.FAIL)
+            and result.check_id in self.SUPPORTED_REMEDIATION_CHECKS
+        )
 
     def trip_circuit_breaker(self, cooldown_seconds: float = 120.0, reason: str = "Rate limit") -> None:
         """Temporarily suspend live LLM remediation requests to keep audit pipeline moving fast."""
@@ -533,31 +558,49 @@ Keep it factual, authoritative, professional, and actionable. Do not use filler 
         summary = self._generate_text(prompt)
         return summary or ""
 
+    def _apply_remediation(self, result: CheckResult, snippet: str, detected_stack: str) -> None:
+        """Apply synthesized remediation and metadata to CheckResult."""
+        result.remediation_snippet_after = snippet
+        result.extra_details["ai_enriched"] = True
+        result.extra_details["detected_stack"] = detected_stack
+        result.extra_details["ai_model"] = self.model_name
+        result.extra_details["ai_provider"] = self.provider
+
     def enrich_remediation(self, result: CheckResult, tech_stack: Dict[str, Any]) -> None:
         """Generate tailored remediation snippets based on repository tech stack."""
-        if not self.is_available() or result.status not in (CheckStatus.WARN, CheckStatus.FAIL):
-            return
-
-        # Target checks where AI context adds major value
-        supported_checks = (
-            "copilot_instructions",
-            "devcontainers",
-            "dependabot_configuration",
-            "workflow_sha_pinning",
-            "workflow_concurrency_groups",
-            "codeowners_validation",
-            "pull_request_templates",
-            "issue_templates",
-            "pre_commit_hooks",
-        )
-        if result.check_id not in supported_checks:
+        if not self.is_eligible_for_remediation(result):
             return
 
         languages = ", ".join(tech_stack.get("languages", [])) or "General Software"
         frameworks = ", ".join(tech_stack.get("frameworks", [])) or "Standard"
         manifests = ", ".join(tech_stack.get("manifests", [])) or "None"
 
-        prompt = f"""You are a Senior DevOps Engineer. Generate a production-ready, custom-tailored configuration snippet to remediate this finding:
+        cache_key = f"{result.check_id}:{languages}:{frameworks}:{manifests}"
+
+        # Fast-path thread-safe cache lookup & singleflight deduplication
+        with self._cache_lock:
+            while cache_key in self._in_flight_keys:
+                self._cache_cond.wait(timeout=10.0)
+                if cache_key in self._remediation_cache:
+                    cached_text = self._remediation_cache[cache_key]
+                    if cached_text:
+                        self._apply_remediation(result, cached_text, languages)
+                    return
+
+            if cache_key in self._remediation_cache:
+                cached_text = self._remediation_cache[cache_key]
+                if cached_text:
+                    self._apply_remediation(result, cached_text, languages)
+                return
+
+            self._in_flight_keys.add(cache_key)
+
+        cleaned_text = ""
+        try:
+            if self.is_circuit_active():
+                return
+
+            prompt = f"""You are a Senior DevOps Engineer. Generate a production-ready, custom-tailored configuration snippet to remediate this finding:
 
 REPOSITORY CONTEXT:
 - Repository: {self.sanitize_text(result.repo_name)}
@@ -583,33 +626,22 @@ Provide ONLY the exact, tailored configuration file content to resolve this for 
 
 Output ONLY the code/configuration snippet inside code fences. Do not add introductory or concluding chat."""
 
-        cache_key = f"{result.check_id}:{languages}:{frameworks}:{manifests}"
-        if cache_key in self._remediation_cache:
-            cleaned_text = self._remediation_cache[cache_key]
-        else:
-            if self.is_circuit_active():
-                return
             text = self._generate_text(prompt, retry_on_rate_limit=False)
-            if not text:
-                # Cache empty string so subsequent repositories do not repeat stalled LLM calls
-                self._remediation_cache[cache_key] = ""
-                return
-            cleaned_text = text.strip()
-            # Remove wrapping markdown fences if present for cleaner diff display
-            if cleaned_text.startswith("```"):
-                lines = cleaned_text.splitlines()
-                if len(lines) >= 2 and lines[-1].startswith("```"):
-                    cleaned_text = "\n".join(lines[1:-1])
-            self._remediation_cache[cache_key] = cleaned_text
+            if text:
+                cleaned = text.strip()
+                if cleaned.startswith("```"):
+                    lines = cleaned.splitlines()
+                    if len(lines) >= 2 and lines[-1].startswith("```"):
+                        cleaned = "\n".join(lines[1:-1])
+                cleaned_text = cleaned
+        finally:
+            with self._cache_lock:
+                self._remediation_cache[cache_key] = cleaned_text
+                self._in_flight_keys.discard(cache_key)
+                self._cache_cond.notify_all()
 
-        if not cleaned_text:
-            return
-
-        result.remediation_snippet_after = cleaned_text
-        result.extra_details["ai_enriched"] = True
-        result.extra_details["detected_stack"] = languages
-        result.extra_details["ai_model"] = self.model_name
-        result.extra_details["ai_provider"] = self.provider
+        if cleaned_text:
+            self._apply_remediation(result, cleaned_text, languages)
 
     def analyze_push_protection_bypass(
         self,

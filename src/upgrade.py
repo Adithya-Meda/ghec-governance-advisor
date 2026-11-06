@@ -135,7 +135,7 @@ def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
             resp = requests.get(
                 api_url,
                 headers={"Accept": "application/vnd.github+json", "User-Agent": "Repo360-Upgrade/1.0"},
-                timeout=10,
+                timeout=5,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -143,18 +143,51 @@ def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
                 date = data.get("commit", {}).get("committer", {}).get("date", "")
                 msg = data.get("commit", {}).get("message", "").splitlines()[0]
                 return True, f"Latest version on main: {sha} ({date}) - '{msg}'"
-    except Exception as exc:
-        return False, f"Could not query remote GitHub repository: {exc}"
+    except Exception:
+        pass
+
+    # Protocol-level fallback via 'git ls-remote' when GitHub REST API rate limit is exceeded
+    try:
+        res = subprocess.run(
+            ["git", "ls-remote", repo_url, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=8,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            sha = res.stdout.strip().splitlines()[0].split()[0][:8]
+            return True, f"Latest version on main: {sha} (via git remote)"
+    except Exception:
+        pass
 
     return False, "Could not query remote GitHub repository."
 
 
 def get_remote_commit_sha(repo_url: str = DEFAULT_REPO_URL) -> Optional[str]:
-    """Fetch the latest commit SHA for the default branch from GitHub API.
+    """Fetch the latest commit SHA for the default branch from git ls-remote or GitHub API.
 
     Returns:
         Full commit SHA string if retrieved successfully, or None.
     """
+    # 1. Primary: Use 'git ls-remote' - protocol-level query with zero REST API rate limit
+    try:
+        res = subprocess.run(
+            ["git", "ls-remote", repo_url, "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=8,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            first_line = res.stdout.strip().splitlines()[0]
+            sha = first_line.split()[0]
+            if len(sha) >= 7:
+                return sha
+    except Exception:
+        pass
+
+    # 2. Secondary: Fallback to GitHub REST API with optional auth headers
     try:
         clean_url = repo_url.rstrip("/")
         if clean_url.endswith(".git"):
@@ -163,11 +196,11 @@ def get_remote_commit_sha(repo_url: str = DEFAULT_REPO_URL) -> Optional[str]:
         if len(parts) >= 2:
             owner, repo_name = parts[-2], parts[-1]
             api_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits/main"
-            resp = requests.get(
-                api_url,
-                headers={"Accept": "application/vnd.github+json", "User-Agent": "Repo360-Upgrade/1.0"},
-                timeout=5,
-            )
+            headers = {"Accept": "application/vnd.github+json", "User-Agent": "Repo360-Upgrade/1.0"}
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+            if token:
+                headers["Authorization"] = f"token {token}"
+            resp = requests.get(api_url, headers=headers, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get("sha")
@@ -253,7 +286,6 @@ def is_output_already_up_to_date(stdout: str, stderr: str) -> bool:
     install_markers = [
         "successfully installed repo360",
         "installing collected packages: repo360",
-        "installed 1 package",
         "upgraded repo360",
     ]
     if any(marker in combined for marker in install_markers):
@@ -269,6 +301,9 @@ def is_output_already_up_to_date(stdout: str, stderr: str) -> bool:
         "repo360 is already at latest version",
         "repo360 is already at the latest version",
         "package repo360 is already up-to-date",
+        "repo360 is unchanged",
+        "unchanged at version",
+        "checked ",
         "nothing to do",
         "0 packages installed",
     ]
@@ -370,6 +405,17 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
     _restore_windows_binaries(renamed, success=success)
 
     post_version, post_commit = get_local_version_info()
+
+    # If the installer output didn't explicitly match, verify if commit hash
+    # remained unchanged without any new repo360 packages being installed
+    if success and not already_up_to_date:
+        combined_output = f"{stdout_str}\n{stderr_str}".lower()
+        has_new_install = any(
+            marker in combined_output
+            for marker in ("successfully installed repo360", "installing collected packages: repo360", "upgraded repo360")
+        )
+        if not has_new_install and local_commit and post_commit and local_commit.lower() == post_commit.lower():
+            already_up_to_date = True
 
     if success:
         return UpgradeResult(0, already_up_to_date=already_up_to_date, version=post_version, commit=post_commit)

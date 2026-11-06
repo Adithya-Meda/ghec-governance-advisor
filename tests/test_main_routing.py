@@ -231,3 +231,51 @@ def test_client_rate_limit_adaptive_delay_healthy():
         # Should NOT sleep when quota is healthy
         assert mock_sleep.call_count == 0
 
+
+def test_run_audit_parallel_ai_enrichment_decoupled():
+    """Verify that AI recommendations are dispatched and synthesized asynchronously without blocking repo audits."""
+    from src.main import run_audit
+    from src.validator import RepoTarget
+    from src.checks.base import CheckResult, CheckStatus
+
+    mock_inspector = MagicMock()
+    mock_inspector.detect_tech_stack.return_value = {"languages": ["Python"]}
+    mock_inspector.prefetch_repo_tree.return_value = {"README.md"}
+
+    mock_ai = MagicMock()
+    mock_ai.is_available.return_value = True
+    mock_ai.is_circuit_active.return_value = False
+    mock_ai.is_eligible_for_remediation.return_value = True
+
+    def fake_enrich(result, tech_stack):
+        result.remediation_snippet_after = "```yaml\n# Auto Enriched In Background\n```"
+        result.extra_details["ai_enriched"] = True
+
+    mock_ai.enrich_remediation.side_effect = fake_enrich
+
+    targets = [
+        RepoTarget(org_name="org1", repo_name="repo-a", target_personas={"all"}),
+        RepoTarget(org_name="org1", repo_name="repo-b", target_personas={"all"}),
+    ]
+
+    config = {
+        "enabled_checks": {"codeowners_validation": True},
+        "policy_thresholds": {},
+    }
+
+    results = run_audit(
+        inspector=mock_inspector,
+        targets=targets,
+        advisory_config=config,
+        ai_engine=mock_ai,
+        max_workers=2,
+    )
+
+    assert len(results) >= 2
+    assert mock_ai.enrich_remediation.call_count >= 2
+    repo_results = [r for r in results if r.repo_name in ("repo-a", "repo-b") and r.check_id == "codeowners_validation"]
+    assert len(repo_results) == 2
+    for r in repo_results:
+        assert r.extra_details.get("ai_enriched") is True
+        assert "# Auto Enriched In Background" in r.remediation_snippet_after
+

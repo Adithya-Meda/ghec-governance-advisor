@@ -315,12 +315,22 @@ def run_audit(
     completed_count = 0
     stop_event = threading.Event()
 
+    # Dedicated background AI worker pool for non-blocking asynchronous remediation
+    ai_futures: List[concurrent.futures.Future] = []
+    ai_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
+        ai_pool_size = min(8, max(2, (os.cpu_count() or 4)))
+        ai_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=ai_pool_size, thread_name_prefix="ai-enricher"
+        )
+
     def _audit_single_target(idx: int, target: RepoTarget) -> List[CheckResult]:
         if stop_event.is_set():
             return []
         nonlocal completed_count
         repo_res: List[CheckResult] = []
         tech_stack: Dict[str, Any] = {}
+        pending_ai_items: List[Tuple[CheckResult, Dict[str, Any]]] = []
 
         try:
             # Prefetch entire repository file tree in 1 API call to eliminate N+1 file existence checks
@@ -357,9 +367,14 @@ def run_audit(
                             target.default_branch,
                             thresholds,
                         )
-                        if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
-                            ai_engine.enrich_remediation(res, tech_stack)
                         repo_res.append(res)
+                        if (
+                            ai_executor
+                            and ai_engine
+                            and not stop_event.is_set()
+                            and ai_engine.is_eligible_for_remediation(res)
+                        ):
+                            pending_ai_items.append((res, dict(tech_stack)))
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -384,9 +399,14 @@ def run_audit(
                             target.default_branch,
                             thresholds,
                         )
-                        if ai_engine and ai_engine.is_available() and not ai_engine.is_circuit_active():
-                            ai_engine.enrich_remediation(res, tech_stack)
                         repo_res.append(res)
+                        if (
+                            ai_executor
+                            and ai_engine
+                            and not stop_event.is_set()
+                            and ai_engine.is_eligible_for_remediation(res)
+                        ):
+                            pending_ai_items.append((res, dict(tech_stack)))
                     except Exception as err:
                         logger.warning(
                             "Check %s failed on %s/%s: %s",
@@ -406,36 +426,72 @@ def run_audit(
             for r in repo_res:
                 _log_finding(r)
 
+            # Asynchronously dispatch background AI remediation for eligible findings
+            if ai_executor and not stop_event.is_set():
+                for res_item, stack_item in pending_ai_items:
+                    fut = ai_executor.submit(ai_engine.enrich_remediation, res_item, stack_item)
+                    ai_futures.append(fut)
+
         return repo_res
 
-    if pool_workers > 1:
-        executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=pool_workers, thread_name_prefix="audit-worker"
-        )
-        try:
-            future_to_idx = {
-                executor.submit(_audit_single_target, idx, target): idx
-                for idx, target in enumerate(targets, start=1)
-            }
-            for future in concurrent.futures.as_completed(future_to_idx):
+    try:
+        if pool_workers > 1:
+            executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=pool_workers, thread_name_prefix="audit-worker"
+            )
+            try:
+                future_to_idx = {
+                    executor.submit(_audit_single_target, idx, target): idx
+                    for idx, target in enumerate(targets, start=1)
+                }
+                for future in concurrent.futures.as_completed(future_to_idx):
+                    if stop_event.is_set():
+                        break
+                    target_idx = future_to_idx[future]
+                    try:
+                        repo_results_by_idx[target_idx] = future.result()
+                    except Exception as exc:
+                        logger.error("Audit worker failed for repository #%d: %s", target_idx, exc)
+                        repo_results_by_idx[target_idx] = []
+            except (KeyboardInterrupt, SystemExit):
+                stop_event.set()
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            finally:
+                stop_event.set()
+                executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            for idx, target in enumerate(targets, start=1):
                 if stop_event.is_set():
                     break
-                target_idx = future_to_idx[future]
-                try:
-                    repo_results_by_idx[target_idx] = future.result()
-                except Exception as exc:
-                    logger.error("Audit worker failed for repository #%d: %s", target_idx, exc)
-                    repo_results_by_idx[target_idx] = []
-        except (KeyboardInterrupt, SystemExit):
-            stop_event.set()
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise
+                repo_results_by_idx[idx] = _audit_single_target(idx, target)
+    except (KeyboardInterrupt, SystemExit):
+        stop_event.set()
+        if ai_executor:
+            ai_executor.shutdown(wait=False, cancel_futures=True)
+        raise
+
+    # 3. Synchronize background AI remediation tasks before report generation
+    if ai_executor:
+        try:
+            if not stop_event.is_set():
+                pending = [f for f in ai_futures if not f.done()]
+                if pending:
+                    D = "\033[2m"
+                    X = "\033[0m"
+                    logger.info(
+                        "%sFinalizing background AI recommendations (%d in-flight tasks)...%s",
+                        D,
+                        len(pending),
+                        X,
+                    )
+                    start_wait = time.time()
+                    while not stop_event.is_set() and any(not f.done() for f in pending):
+                        concurrent.futures.wait(pending, timeout=0.2)
+                        if time.time() - start_wait > 60.0:
+                            break
         finally:
-            stop_event.set()
-            executor.shutdown(wait=False, cancel_futures=True)
-    else:
-        for idx, target in enumerate(targets, start=1):
-            repo_results_by_idx[idx] = _audit_single_target(idx, target)
+            ai_executor.shutdown(wait=False, cancel_futures=True)
 
     # Flatten in deterministic target order
     for idx in sorted(repo_results_by_idx.keys()):
