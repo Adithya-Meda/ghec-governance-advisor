@@ -149,6 +149,132 @@ def check_remote_status(repo_url: str = DEFAULT_REPO_URL) -> Tuple[bool, str]:
     return False, "Could not query remote GitHub repository."
 
 
+def get_remote_commit_sha(repo_url: str = DEFAULT_REPO_URL) -> Optional[str]:
+    """Fetch the latest commit SHA for the default branch from GitHub API.
+
+    Returns:
+        Full commit SHA string if retrieved successfully, or None.
+    """
+    try:
+        clean_url = repo_url.rstrip("/")
+        if clean_url.endswith(".git"):
+            clean_url = clean_url[:-4]
+        parts = clean_url.split("/")
+        if len(parts) >= 2:
+            owner, repo_name = parts[-2], parts[-1]
+            api_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits/main"
+            resp = requests.get(
+                api_url,
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "Repo360-Upgrade/1.0"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("sha")
+    except Exception:
+        pass
+    return None
+
+
+class UpgradeResult(int):
+    """Upgrade exit code with metadata tracking whether code was updated or already at latest."""
+
+    already_up_to_date: bool = False
+    version: str = ""
+    commit: Optional[str] = None
+
+    def __new__(
+        cls,
+        code: int,
+        already_up_to_date: bool = False,
+        version: str = "",
+        commit: Optional[str] = None,
+    ) -> UpgradeResult:
+        instance = super().__new__(cls, code)
+        instance.already_up_to_date = already_up_to_date
+        instance.version = version
+        instance.commit = commit
+        return instance
+
+
+def get_local_version_info() -> Tuple[str, Optional[str]]:
+    """Retrieve currently installed Repo360 version and git commit hash if available.
+
+    Returns:
+        Tuple of (version_str, commit_sha_or_none).
+    """
+    version = "1.0.0"
+    commit_sha: Optional[str] = None
+
+    # 1. Check package metadata via importlib.metadata (PEP 566 / PEP 610)
+    try:
+        import importlib.metadata as meta
+        import json
+        dist = meta.distribution("repo360")
+        version = dist.version or version
+        direct_url_text = dist.read_text("direct_url.json")
+        if direct_url_text:
+            data = json.loads(direct_url_text)
+            commit_sha = data.get("vcs_info", {}).get("commit_id")
+    except Exception:
+        pass
+
+    # 2. Check local package __version__
+    if not version or version == "1.0.0":
+        try:
+            from . import __version__
+            version = __version__
+        except Exception:
+            version = "1.0.0"
+
+    # 3. If running from local clone or editable install, check git HEAD
+    if not commit_sha:
+        try:
+            res = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                commit_sha = res.stdout.strip()
+        except Exception:
+            pass
+
+    return f"v{version.lstrip('v')}", commit_sha
+
+
+def is_output_already_up_to_date(stdout: str, stderr: str) -> bool:
+    """Inspect installer stdout/stderr to determine if the package was already up-to-date."""
+    combined = f"{stdout}\n{stderr}".lower()
+
+    # Explicit indications that new files or packages were installed
+    install_markers = [
+        "successfully installed repo360",
+        "installing collected packages: repo360",
+        "installed 1 package",
+        "upgraded repo360",
+    ]
+    if any(marker in combined for marker in install_markers):
+        return False
+
+    # Explicit indications that requirements were already satisfied
+    satisfied_markers = [
+        "requirement already satisfied: repo360",
+        "requirement already satisfied",
+        "requirement already up-to-date",
+        "already up to date",
+        "already up-to-date",
+        "repo360 is already at latest version",
+        "repo360 is already at the latest version",
+        "package repo360 is already up-to-date",
+        "nothing to do",
+        "0 packages installed",
+    ]
+    return any(marker in combined for marker in satisfied_markers)
+
+
 def _prepare_windows_binaries(scripts_dir: Path) -> List[Tuple[Path, Path]]:
     """On Windows, running .exe files cannot be deleted or overwritten in-place.
 
@@ -202,17 +328,19 @@ def _restore_windows_binaries(renamed: List[Tuple[Path, Path]], success: bool) -
                     pass
 
 
-def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = False) -> int:
+def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = False) -> UpgradeResult:
     """Execute the upgrade process via subprocess with resilient fallback across strategies."""
+    local_version, local_commit = get_local_version_info()
     if dry_run:
         chosen = candidates[0]
         print(f"\n\033[96m[DRY-RUN]\033[0m Would execute upgrade ({chosen[0]}):\n  {' '.join(chosen[1])}\n")
-        return 0
+        return UpgradeResult(0, already_up_to_date=False, version=local_version, commit=local_commit)
 
     scripts_dir = Path(sys.executable).parent
     renamed = _prepare_windows_binaries(scripts_dir)
 
     success = False
+    already_up_to_date = False
     last_error: Optional[str] = None
     for strategy_name, cmd in candidates:
         logger.debug("Executing upgrade via %s: %s", strategy_name, " ".join(cmd))
@@ -227,6 +355,9 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
             )
             if result.returncode == 0:
                 success = True
+                stdout_str = getattr(result, "stdout", "") or ""
+                stderr_str = getattr(result, "stderr", "") or ""
+                already_up_to_date = is_output_already_up_to_date(stdout_str, stderr_str)
                 break
             err_lines = [line.strip() for line in (result.stderr or result.stdout or "").splitlines() if line.strip()]
             last_error = err_lines[-1] if err_lines else f"Exited with code {result.returncode}"
@@ -238,11 +369,13 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
 
     _restore_windows_binaries(renamed, success=success)
 
+    post_version, post_commit = get_local_version_info()
+
     if success:
-        return 0
+        return UpgradeResult(0, already_up_to_date=already_up_to_date, version=post_version, commit=post_commit)
 
     print(f"\n\033[91m[FAIL]\033[0m Upgrade failed: {last_error}\n")
-    return 1
+    return UpgradeResult(1, already_up_to_date=False, version=local_version, commit=local_commit)
 
 
 def verify_local_state() -> None:
@@ -308,12 +441,31 @@ def run_upgrade_cli(argv: Optional[List[str]] = None) -> int:
         print(f"Run 'repo360 upgrade' to install via {installer}: {' '.join(cmd)}\n")
         return 0
 
+    local_ver, local_sha = get_local_version_info()
+
+    # Pre-flight check: if local commit is verified and matches remote default branch HEAD
+    if not args.dry_run and local_sha:
+        remote_sha = get_remote_commit_sha(args.source)
+        if remote_sha and (
+            local_sha.lower() == remote_sha.lower()
+            or local_sha.lower().startswith(remote_sha[:8].lower())
+            or remote_sha.lower().startswith(local_sha[:8].lower())
+        ):
+            print(f"\033[92m[SUCCESS]\033[0m Repo360 is already on the latest version ({local_ver} @ {remote_sha[:7]}).\n")
+            return 0
+
     candidates = get_upgrade_commands(args.source, installer_override)
     print("\033[96m[INFO]\033[0m Upgrading Repo360 to the latest version...")
 
-    exit_code = execute_upgrade(candidates, dry_run=args.dry_run)
+    res = execute_upgrade(candidates, dry_run=args.dry_run)
+    exit_code = int(res)
     if exit_code == 0 and not args.dry_run:
-        print("\033[92m[SUCCESS]\033[0m Repo360 upgraded successfully.")
+        display_ver = getattr(res, "version", "") or local_ver
+        if getattr(res, "already_up_to_date", False):
+            commit_suffix = f" @ {res.commit[:7]}" if getattr(res, "commit", None) else ""
+            print(f"\033[92m[SUCCESS]\033[0m Repo360 is already on the latest version ({display_ver}{commit_suffix}).")
+        else:
+            print(f"\033[92m[SUCCESS]\033[0m Repo360 upgraded successfully ({display_ver}).")
     elif exit_code != 0:
         print(f"\033[91m[FAIL]\033[0m Upgrade failed with exit code {exit_code}.\n")
 
