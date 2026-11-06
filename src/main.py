@@ -355,6 +355,7 @@ Commands:
   dora        Calculate cross-organization DORA & delivery flow metrics (DF, Lead Time, CFR, MTTR)
   bypass      Audit secret scanning push-protection overrides and branch ruleset bypass events
   upgrade     Upgrade Repo360 CLI to the latest version directly from GitHub
+  health      Verify GitHub App authentication, organization access, and AI engine status
 
 Options:
   -h, --help  Show this help message or help for a specific command
@@ -369,7 +370,17 @@ def main() -> int:
 
     Running bare 'repo360' prints available commands and does NOT invoke any operation.
     """
+    import signal
     import sys
+
+    def _graceful_exit(signum, frame):
+        sig_name = "SIGTERM" if signum == getattr(signal, "SIGTERM", None) else "SIGINT (Ctrl+C)"
+        logger.warning("\n[TERMINATION] Received %s. Flushing output buffers and exiting cleanly...", sig_name)
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGINT, _graceful_exit)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _graceful_exit)
 
     # 1. Bare invocation: 'repo360' with no arguments displays help
     if len(sys.argv) <= 1:
@@ -449,6 +460,39 @@ def main() -> int:
         except KeyboardInterrupt:
             logger.warning("\nUpgrade cancelled by user (Ctrl+C). Exiting...")
             return 130
+
+    if subcmd in ("health", "healthcheck", "status"):
+        sys.argv.pop(1)
+        import json
+        from .credentials import resolve_runtime_credentials
+        from .auth.github_app_auth import GitHubAppAuth
+        from .ai import init_ai_engine
+
+        creds = resolve_runtime_credentials()
+        app_id = creds.get("app_id")
+        private_key = creds.get("private_key")
+        if not app_id or not private_key:
+            print(json.dumps({"status": "UNHEALTHY", "error": "Credentials unconfigured"}, indent=2))
+            return 1
+        try:
+            auth = GitHubAppAuth(
+                app_id=app_id,
+                private_key=private_key,
+                api_base_url=creds.get("api_base_url", "https://api.github.com"),
+            )
+            installs = auth.discover_installations()
+            ai_eng = init_ai_engine()
+            health_data = {
+                "status": "HEALTHY" if installs else "DEGRADED",
+                "app_id": app_id,
+                "installations_count": len(installs),
+                "ai_engine": "ONLINE" if ai_eng.is_available() else "OFFLINE",
+            }
+            print(json.dumps(health_data, indent=2))
+            return 0 if installs else 1
+        except Exception as exc:
+            print(json.dumps({"status": "UNHEALTHY", "error": str(exc)}, indent=2))
+            return 1
 
     # 4. Unknown subcommand or misplaced option
     print(f"Error: Unknown command '{sys.argv[1]}'. Run 'repo360 --help' for available commands.\n")

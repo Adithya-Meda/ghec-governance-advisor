@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
+import subprocess
 import time
 from typing import Any, Dict, Optional
 
@@ -44,6 +46,14 @@ def get_secrets_dir() -> str:
     return path
 
 
+def enforce_strict_permissions(file_path: str) -> None:
+    """Enforce strict owner permissions (0600) with safe cross-platform fallback."""
+    try:
+        os.chmod(file_path, 0o600)
+    except Exception as err:
+        logger.debug("Failed setting file permissions on %s: %s", file_path, err)
+
+
 def save_private_key(key_content: str, app_slug: str = "repo360", dest_dir: Optional[str] = None) -> str:
     """Save RSA private key with standardized naming convention and safe permissions."""
     today_str = time.strftime("%Y-%m-%d")
@@ -55,12 +65,7 @@ def save_private_key(key_content: str, app_slug: str = "repo360", dest_dir: Opti
     with open(key_path, "w", encoding="utf-8") as f:
         f.write(key_content)
 
-    # Restrict permissions to owner-only on POSIX systems (chmod 600)
-    try:
-        os.chmod(key_path, 0o600)
-    except Exception:
-        pass
-
+    enforce_strict_permissions(key_path)
     return key_path
 
 
@@ -94,11 +99,7 @@ def save_user_credentials(
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2)
 
-    try:
-        os.chmod(config_path, 0o600)
-    except Exception:
-        pass
-
+    enforce_strict_permissions(config_path)
     return config_path
 
 

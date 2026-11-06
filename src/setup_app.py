@@ -19,6 +19,7 @@ import http.server
 import json
 import logging
 import os
+import secrets
 import socketserver
 import time
 import urllib.parse
@@ -39,8 +40,9 @@ PORT = 8989
 CALLBACK_URL = f"http://localhost:{PORT}/callback"
 
 
-def get_manifest(github_domain: str, app_name: str = "Repo360") -> dict:
+def get_manifest(github_domain: str, app_name: str = "Repo360", state_nonce: str = "") -> dict:
     """Generate the GitHub App manifest payload."""
+    redirect_target = f"{CALLBACK_URL}?state={state_nonce}" if state_nonce else CALLBACK_URL
     return {
         "name": app_name or "Repo360",
         "url": github_domain,
@@ -49,7 +51,7 @@ def get_manifest(github_domain: str, app_name: str = "Repo360") -> dict:
             "url": github_domain,
             "active": False,
         },
-        "redirect_url": CALLBACK_URL,
+        "redirect_url": redirect_target,
         "default_permissions": {
             "actions": "read",
             "administration": "read",
@@ -75,6 +77,7 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
     github_domain: str = "https://github.com"
     api_domain: str = "https://api.github.com"
     conversion_result: dict | None = None
+    session_nonce: str = secrets.token_urlsafe(32)
 
     def log_message(self, fmt: str, *args) -> None:
         """Suppress standard HTTP server access logs."""
@@ -88,7 +91,13 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
             # Auto-assign unique name using target_org to avoid global GitHub App name collisions
             default_name = f"Repo360-{self.target_org}" if self.target_org else "Repo360"
             active_name = self.app_name or default_name
-            manifest_json = json.dumps(get_manifest(self.github_domain, app_name=active_name))
+            manifest_json = json.dumps(
+                get_manifest(
+                    self.github_domain,
+                    app_name=active_name,
+                    state_nonce=ManifestCallbackHandler.session_nonce,
+                )
+            )
             form_action = (
                 f"{self.github_domain}/organizations/{self.target_org}/settings/apps/new"
                 if self.target_org
@@ -193,14 +202,21 @@ class ManifestCallbackHandler(http.server.BaseHTTPRequestHandler):
             return
 
         elif parsed_url.path == "/callback":
-            # GitHub redirected back with ?code=...
+            # GitHub redirected back with ?code=...&state=...
             query_params = urllib.parse.parse_qs(parsed_url.query)
+            state = query_params.get("state", [""])[0]
             code = query_params.get("code", [""])[0]
 
             if not code:
                 self.send_response(400)
                 self.end_headers()
                 self.wfile.write(b"Error: Missing authorization code in callback.")
+                return
+
+            if ManifestCallbackHandler.session_nonce and not secrets.compare_digest(state, ManifestCallbackHandler.session_nonce):
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Security Error: Invalid or expired state nonce.")
                 return
 
             # Exchange code for app credentials

@@ -10,6 +10,7 @@ import base64
 import email.utils
 import logging
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import jwt
@@ -80,6 +81,7 @@ class GitHubAppAuth:
         self.api_base_url = api_base_url.rstrip("/")
         self._private_key_pem = self._load_private_key(private_key)
         self._token_cache: Dict[int, Tuple[str, float]] = {}  # installation_id -> (token, expires_at)
+        self._token_lock = threading.RLock()
         self._org_to_installation: Dict[str, int] = {}  # org_name.lower() -> installation_id
         self._installations_cache: Optional[List[Dict[str, Any]]] = None
         self._cached_token: Optional[str] = None
@@ -297,53 +299,54 @@ class GitHubAppAuth:
             target_id = int(installations[0]["id"])
             self.set_installation_id(target_id)
 
-        now = time.time()
-        # 2. Check per-installation cache (valid for at least 5 more minutes)
-        if not force_refresh and target_id in self._token_cache:
-            cached_token, expires_at = self._token_cache[target_id]
-            if (expires_at - now) > 300:
-                return cached_token
+        with self._token_lock:
+            now = time.time()
+            # 2. Check per-installation cache (valid for at least 5 more minutes)
+            if not force_refresh and target_id in self._token_cache:
+                cached_token, expires_at = self._token_cache[target_id]
+                if (expires_at - now) > 300:
+                    return cached_token
 
-        # 3. Exchange new installation token via App JWT
-        jwt_token = self.generate_jwt()
-        endpoint = f"{self.api_base_url}/app/installations/{target_id}/access_tokens"
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "Repo360-Platform/1.0",
-        }
+            # 3. Exchange new installation token via App JWT
+            jwt_token = self.generate_jwt()
+            endpoint = f"{self.api_base_url}/app/installations/{target_id}/access_tokens"
+            headers = {
+                "Authorization": f"Bearer {jwt_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Repo360-Platform/1.0",
+            }
 
-        try:
-            response = _request_with_retry("POST", endpoint, headers=headers, timeout=15)
-            response.raise_for_status()
-            data: Dict[str, Any] = response.json()
-            new_token: str = data["token"]
-            expires_at = now + 3500
+            try:
+                response = _request_with_retry("POST", endpoint, headers=headers, timeout=15)
+                response.raise_for_status()
+                data: Dict[str, Any] = response.json()
+                new_token: str = data["token"]
+                expires_at = now + 3500
 
-            # Store in multi-installation cache
-            self._token_cache[target_id] = (new_token, expires_at)
+                # Store in multi-installation cache
+                self._token_cache[target_id] = (new_token, expires_at)
 
-            # Update legacy single-install cache if this matches active installation
-            if self.installation_id == target_id or self.installation_id is None:
-                self.installation_id = target_id
-                self._cached_token = new_token
-                self._token_expires_at = expires_at
+                # Update legacy single-install cache if this matches active installation
+                if self.installation_id == target_id or self.installation_id is None:
+                    self.installation_id = target_id
+                    self._cached_token = new_token
+                    self._token_expires_at = expires_at
 
-            return new_token
-        except requests.exceptions.RequestException as err:
-            details = ""
-            if getattr(err, "response", None) is not None:
-                details = f" - Details: {err.response.text}"
-            logger.error(
-                "Failed to obtain installation token for App ID %s and Installation ID %s%s",
-                self.app_id,
-                target_id,
-                details,
-            )
-            raise RuntimeError(
-                f"GitHub App token exchange failed for installation {target_id}: {err}{details}"
-            ) from err
+                return new_token
+            except requests.exceptions.RequestException as err:
+                details = ""
+                if getattr(err, "response", None) is not None:
+                    details = f" - Details: {err.response.text}"
+                logger.error(
+                    "Failed to obtain installation token for App ID %s and Installation ID %s%s",
+                    self.app_id,
+                    target_id,
+                    details,
+                )
+                raise RuntimeError(
+                    f"GitHub App token exchange failed for installation {target_id}: {err}{details}"
+                ) from err
 
     def get_auth_headers(
         self,

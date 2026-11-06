@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -299,17 +299,17 @@ class Repo360Client:
         path: str,
         params: Optional[Dict[str, Any]] = None,
         per_page: int = 100,
-        max_pages: int = 50,
+        max_pages: Optional[int] = 250,
         installation_id: Optional[int | str] = None,
         org: Optional[str] = None,
     ) -> List[Any]:
-        """Paginate through a GitHub API list endpoint supporting up to 5,000 items.
+        """Paginate through a GitHub API list endpoint supporting 10,000+ items.
 
         Args:
             path: API path.
             params: Query parameters.
             per_page: Items per page (max 100).
-            max_pages: Maximum pages to fetch (default: 50 pages = 5,000 items).
+            max_pages: Maximum pages to fetch (default: 250 pages = 25,000 items; None for unlimited).
             installation_id: Optional specific installation ID for this request.
             org: Optional organization name override.
 
@@ -321,7 +321,7 @@ class Repo360Client:
         query_params = dict(params or {})
         query_params["per_page"] = per_page
 
-        while page <= max_pages:
+        while max_pages is None or page <= max_pages:
             query_params["page"] = page
             data = self.get(
                 path,
@@ -337,3 +337,32 @@ class Repo360Client:
             page += 1
 
         return all_items
+
+    def stream_paginated(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        per_page: int = 100,
+        installation_id: Optional[int | str] = None,
+        org: Optional[str] = None,
+    ) -> Iterator[Any]:
+        """Stream items page-by-page yielding individual entities in O(1) memory."""
+        page = 1
+        query_params = dict(params or {})
+        query_params["per_page"] = per_page
+
+        while True:
+            query_params["page"] = page
+            data = self.get(
+                path,
+                params=query_params,
+                installation_id=installation_id,
+                org=org,
+            )
+            if not data or not isinstance(data, list):
+                break
+            for item in data:
+                yield item
+            if len(data) < per_page:
+                break
+            page += 1

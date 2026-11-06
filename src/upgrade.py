@@ -223,12 +223,16 @@ def execute_upgrade(candidates: List[Tuple[str, List[str]]], dry_run: bool = Fal
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
+                timeout=300,
             )
             if result.returncode == 0:
                 success = True
                 break
             err_lines = [line.strip() for line in (result.stderr or result.stdout or "").splitlines() if line.strip()]
             last_error = err_lines[-1] if err_lines else f"Exited with code {result.returncode}"
+        except subprocess.TimeoutExpired:
+            logger.error("Upgrade command timed out after 300 seconds: %s", " ".join(cmd))
+            last_error = "Execution timed out after 300 seconds"
         except Exception as exc:
             last_error = str(exc)
 

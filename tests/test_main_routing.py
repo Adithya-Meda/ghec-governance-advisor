@@ -87,6 +87,19 @@ def test_main_route_upgrade():
             assert mock_up.called
 
 
+def test_main_route_health(capsys):
+    with patch.object(sys, "argv", ["repo360", "health"]):
+        with patch("src.credentials.resolve_runtime_credentials", return_value={"app_id": 12345, "private_key": "dummy", "api_base_url": "https://api.github.com"}):
+            with patch("src.auth.github_app_auth.GitHubAppAuth._load_private_key", return_value="mock-pem"):
+                with patch("src.auth.github_app_auth.GitHubAppAuth.discover_installations", return_value=[{"id": 1}]):
+                    with patch("src.ai.init_ai_engine") as mock_ai:
+                        mock_ai.return_value.is_available.return_value = True
+                        ret = main()
+                        assert ret == 0
+                        captured = capsys.readouterr()
+                        assert '"status": "HEALTHY"' in captured.out
+
+
 def test_main_unknown_command(capsys):
     with patch.object(sys, "argv", ["repo360", "nonexistent"]):
         ret = main()

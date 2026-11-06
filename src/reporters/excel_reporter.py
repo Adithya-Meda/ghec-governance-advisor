@@ -49,13 +49,18 @@ class ExcelReporter(BaseReporter):
         else:
             cell.fill = self.fill_skip
 
-    def _auto_adjust_columns(self, sheet) -> None:
-        """Autofit column widths for readability."""
-        for col in sheet.columns:
+    def _auto_adjust_columns(self, sheet, max_sample_rows: int = 100) -> None:
+        """Autofit column widths in O(1) memory by sampling top rows, preventing OOM on 10,000+ items."""
+        sampled_rows = list(sheet.iter_rows(max_row=max_sample_rows))
+        if not sampled_rows:
+            return
+
+        num_cols = len(sampled_rows[0])
+        for col_idx in range(num_cols):
+            col_letter = get_column_letter(col_idx + 1)
             max_len = 0
-            col_letter = get_column_letter(col[0].column)
-            for cell in col:
-                val = str(cell.value or "")
+            for row in sampled_rows:
+                val = str(row[col_idx].value or "")
                 first_line = val.split("\n")[0]
                 if len(first_line) > max_len:
                     max_len = min(len(first_line), 45)

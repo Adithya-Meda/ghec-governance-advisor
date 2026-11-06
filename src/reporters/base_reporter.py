@@ -56,10 +56,13 @@ class BaseReporter(ABC):
     def sanitize_spreadsheet_value(value: object) -> object:
         """Sanitize values against CSV / Excel Formula Injection (CWE-1236).
 
-        Prepends a single quote if the string begins with =, +, -, @, tab, or carriage return.
+        Prepends a single quote if the string begins with =, +, -, @, tab, carriage return,
+        or any whitespace preceding these formula execution characters.
         """
-        if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
-            return f"'{value}"
+        if isinstance(value, str):
+            stripped = value.lstrip(" \t\r\n")
+            if stripped.startswith(("=", "+", "-", "@", "\t", "\r")):
+                return f"'{value}"
         return value
 
     @staticmethod
