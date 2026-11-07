@@ -23,8 +23,11 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 # Suppress noisy internal warnings from third-party client
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*invalid escape sequence.*")
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
-warnings.filterwarnings("ignore", category=UserWarning, module="google")
 
 from ..checks.base import CheckResult, CheckStatus
 
@@ -132,8 +135,12 @@ class AIEngine:
         if self.enabled:
             if self.provider == "gemini":
                 try:
-                    from google import genai
-                    from google.genai import types
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", SyntaxWarning)
+                        warnings.simplefilter("ignore", UserWarning)
+                        warnings.simplefilter("ignore", DeprecationWarning)
+                        from google import genai
+                        from google.genai import types
 
                     self._client = genai.Client(api_key=self.api_key)
                     self._gen_config = types.GenerateContentConfig(
